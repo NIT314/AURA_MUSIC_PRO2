@@ -681,6 +681,27 @@ async function playSingleSong(track, autoplay = true) {
     
     // 1. Update UI Elements
     document.getElementById("mini-title").innerText = track.title;
+    // === ANDROID / PWA LOCK SCREEN MEDIA CONTROLS ===
+    if ('mediaSession' in navigator) {
+        navigator.mediaSession.metadata = new MediaMetadata({
+            title: track.title,
+            artist: track.artist,
+            album: track.album || 'AURA MUSIC',
+            artwork: [
+                { src: track.thumbnail || 'https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?auto=format&fit=crop&w=512&q=80', sizes: '512x512', type: 'image/jpeg' }
+            ]
+        });
+
+        navigator.mediaSession.setActionHandler('play', () => { 
+            audio.play(); onSongPlayStateChange(true); 
+        });
+        navigator.mediaSession.setActionHandler('pause', () => { 
+            audio.pause(); onSongPlayStateChange(false); 
+        });
+        navigator.mediaSession.setActionHandler('previoustrack', playPrevTrack);
+        navigator.mediaSession.setActionHandler('nexttrack', playNextTrack);
+    }
+    // ===============================================
     document.getElementById("mini-artist").innerText = track.artist;
     document.getElementById("mini-artwork").src = track.thumbnail || 'https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?auto=format&fit=crop&w=100&q=80';
     

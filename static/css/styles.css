@@ -59,14 +59,22 @@ body.theme-crimson-red {
 
 html, body {
     width: 100%;
-    height: 100%;
+    height: 100dvh; /* 100% ki jagah 100dvh lagaya taaki mobile screen perfectly map ho */
     overflow: hidden;
     background-color: var(--bg-dark);
     font-family: var(--font-body);
     color: var(--text-primary);
     user-select: none;
-    /* Prevent iOS bounce */
     overscroll-behavior: none;
+}
+
+#app-container {
+    position: relative;
+    width: 100%;
+    height: 100dvh; /* Yahan bhi 100dvh */
+    display: flex;
+    z-index: 2;
+    overflow: hidden;
 }
 
 /* Ambient Aura Atmos Background */
@@ -1855,18 +1863,16 @@ input:checked + .slider-round:before {
     top: 0;
     left: 0;
     width: 100%;
-    height: 100%;
+    height: 100dvh; /* 100% hata kar 100dvh */
     background: #08080c;
     z-index: 200;
     display: flex;
     flex-direction: column;
     padding: 30px 40px;
-    overflow: hidden;
-    /* Slide-up animation approach - use transform not display */
+    overflow-y: auto; /* Yahan auto kiya taaki chhoti screen par scroll ho sake */
     transform: translateY(100%);
     transition: transform 0.45s cubic-bezier(0.16, 1, 0.3, 1);
     will-change: transform;
-    /* IMPORTANT: always keep display:flex so transition works */
     visibility: hidden;
     pointer-events: none;
 }
@@ -2590,31 +2596,32 @@ body.playing-state .artwork-wrapper {
 
     /* ---- Full Player Mobile ---- */
     #full-player {
-        padding: 16px;
-        padding-top: 20px;
+        padding: max(16px, env(safe-area-inset-top)) 16px max(30px, env(safe-area-inset-bottom));
+        /* Notch aur bottom bar ke liye safe-area add kiya */
     }
 
     .full-player-header {
         margin-bottom: 12px;
+        flex-shrink: 0;
     }
 
     .full-player-body {
         grid-template-columns: 1fr;
-        gap: 16px;
-        overflow-y: auto;
-        align-items: flex-start;
-        -webkit-overflow-scrolling: touch;
+        gap: 25px; /* Gap badhaya taaki gich-pich na ho */
+        overflow-y: visible; /* Scroll allow karega */
+        align-items: center;
+        padding-bottom: 40px; /* Neeche extra space */
     }
 
     #aura-sphere-container {
-        width: min(260px, 70vw);
-        height: min(260px, 70vw);
+        width: min(280px, 75vw);
+        height: min(280px, 75vw);
         margin: 0 auto;
     }
 
     .artwork-wrapper {
-        width: min(170px, 46vw);
-        height: min(170px, 46vw);
+        width: min(190px, 50vw);
+        height: min(190px, 50vw);
     }
 
     #aura-wave-container {
@@ -2732,7 +2739,7 @@ body.playing-state .artwork-wrapper {
     /* ---- JAM Mobile ---- */
     .jam-lobby {
         align-items: flex-start;
-        padding: 10px 0;
+        padding: 10px 0 30px; /* Bottom padding badhayi */
     }
 
     .glass-card {
@@ -2740,18 +2747,22 @@ body.playing-state .artwork-wrapper {
     }
 
     .jam-room-layout {
-        grid-template-columns: 1fr;
+        display: flex;
+        flex-direction: column; /* Grid hata kar flex column kiya */
         height: auto;
-        gap: 16px;
+        gap: 20px;
+        padding-bottom: 30px; /* Jisse chat cut na ho */
     }
 
     .jam-room-left {
-        max-height: 60vh;
+        max-height: none; /* Left side ko full height di */
+        overflow: visible;
     }
 
     .jam-room-right {
-        height: 380px;
+        height: 450px; /* Chat block ki height fixed ki */
         flex-shrink: 0;
+        margin-bottom: 20px;
     }
 
     /* Library header wrap */
