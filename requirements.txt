@@ -1,6 +1,7 @@
-fastapi
-uvicorn[standard]
-ytmusicapi
+fastapi==0.109.2
+uvicorn[standard]==0.27.1
+ytmusicapi==0.44.0
 yt-dlp
-httpx
-websockets
+httpx==0.27.0
+websockets==12.0
+slowapi==0.1.9

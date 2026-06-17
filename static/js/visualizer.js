@@ -8,6 +8,7 @@ let waveCtx = null;
 let sphereCanvas = null;
 let sphereCtx = null;
 let animationId = null;
+let isVisualizerRequested = false; // Track karega ki gaana chal raha hai ya nahi
 
 // Visualizer State
 let spherePoints = [];
@@ -47,6 +48,22 @@ function initVisualizers() {
     // Setup resize handlers
     window.addEventListener("resize", resizeVisualizerCanvases);
     resizeVisualizerCanvases();
+
+    // 🔥 BATTERY SAVER: Page Visibility API
+    document.addEventListener("visibilitychange", () => {
+        if (document.hidden) {
+            // App background mein hai -> Visualizer Pause karo
+            if (animationId) {
+                cancelAnimationFrame(animationId);
+                animationId = null;
+            }
+        } else {
+            // App wapas screen par aaya -> Agar gaana chal raha tha toh Resume karo
+            if (isVisualizerRequested) {
+                startVisualizerLoop();
+            }
+        }
+    });
 }
 
 function resizeVisualizerCanvases() {
@@ -57,6 +74,9 @@ function resizeVisualizerCanvases() {
 }
 
 function startVisualizerLoop() {
+    isVisualizerRequested = true;
+    if (document.hidden) return; // Agar app hidden hai toh draw mat karo
+
     if (animationId) cancelAnimationFrame(animationId);
     
     function draw() {
@@ -82,6 +102,7 @@ function startVisualizerLoop() {
 }
 
 function stopVisualizerLoop() {
+    isVisualizerRequested = false;
     if (animationId) {
         cancelAnimationFrame(animationId);
         animationId = null;

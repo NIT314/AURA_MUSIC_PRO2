@@ -16,10 +16,20 @@ from services.lyrics_service import fetch_lyrics
 from services.recommendation_service import get_mood_playlist, get_ai_recommendations
 from services.jam_service import create_room, get_room, rooms
 
+# 🔥 DDOS PROTECTION IMPORTS
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="AURA ∞ MUSIC API", version="1.0.0")
+
+# 🔥 INITIALIZE LIMITER (IP Address ke hisaab se block karega)
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,
@@ -30,7 +40,8 @@ app.add_middleware(
 )
 
 @app.get("/api/search")
-def api_search(q: str = Query(..., min_length=1), filter: str = None):
+@limiter.limit("60/minute") # Ek user 1 minute mein max 60 search kar sakta hai
+def api_search(request: Request, q: str = Query(..., min_length=1), filter: str = None):
     return search_music(q, filter)
 
 @app.get("/api/suggestions")
@@ -38,6 +49,7 @@ def api_suggestions(q: str):
     return get_suggestions(q)
 
 @app.get("/api/stream")
+@limiter.limit("120/minute") # Stream ke liye thodi limit zyada rakhi hai taaki gaana aage-peeche karne par block na ho
 async def api_stream(video_id: str, request: Request):
     try:
         stream_url = get_streaming_url(video_id)

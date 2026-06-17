@@ -1,4 +1,4 @@
-const CACHE_NAME = 'aura-v2';
+const CACHE_NAME = 'aura-v3';
 const ASSETS = [
   '/',
   '/index.html',
@@ -41,13 +41,21 @@ self.addEventListener('fetch', (e) => {
   }
   
   e.respondWith(
-    caches.match(e.request).then((cachedResponse) => {
-      return cachedResponse || fetch(e.request).catch(() => {
-        // Fallback: return index.html for navigation requests
-        if (e.request.mode === 'navigate') {
-          return caches.match('/index.html');
-        }
-      });
-    })
+    // 🔥 NETWORK-FIRST STRATEGY: Pehle internet se naya code fetch karo
+    fetch(e.request)
+      .then((response) => {
+        // Agar naya code mil gaya, toh use cache mein update kar lo
+        const resClone = response.clone();
+        caches.open(CACHE_NAME).then((cache) => {
+          cache.put(e.request, resClone);
+        });
+        return response; // Naya code user ko dikhao
+      })
+      .catch(() => {
+        // Agar internet band hai (Offline), tabhi purana cache serve karo
+        return caches.match(e.request).then((cachedResponse) => {
+          return cachedResponse || (e.request.mode === 'navigate' ? caches.match('/index.html') : null);
+        });
+      })
   );
 });

@@ -10,8 +10,16 @@ let currentUserRole = "listener"; // Default
 let jamReconnectTimer = null;
 let jamReconnectAttempts = 0;
 let jamShouldReconnect = false; // Only reconnect if user hasn't manually left
-const JAM_MAX_RECONNECT = 8;
+const JAM_MAX_RECONNECT = 100; // Safar ke hisaab se limit badhayi (Lagatar 15 minute tak try karega)
 const JAM_RECONNECT_BASE_MS = 1500;
+
+// 🔥 SMART NETWORK LISTENER: Jaise hi phone mein internet wapas aayega, turant reconnect fire hoga
+window.addEventListener('online', () => {
+    if (jamShouldReconnect && (!jamSocket || jamSocket.readyState !== WebSocket.OPEN)) {
+        clearTimeout(jamReconnectTimer);
+        connectJamRoom(currentUsername, currentRoomCode, true);
+    }
+});
 
 function connectJamRoom(username, roomCode, isReconnect = false) {
     if (jamSocket && jamSocket.readyState === WebSocket.OPEN) {
@@ -30,7 +38,7 @@ function connectJamRoom(username, roomCode, isReconnect = false) {
     if (!isReconnect) {
         showToast(`Connecting to Room ${currentRoomCode}...`);
     } else {
-        showToast(`Reconnecting... (attempt ${jamReconnectAttempts})`);
+        // UI mein chupchaap background mein reconnect karenge bina user ko disturb kiye
         setJamSyncStatus('reconnecting');
     }
     
@@ -45,10 +53,10 @@ function connectJamRoom(username, roomCode, isReconnect = false) {
     jamSocket.onopen = () => {
         jamReconnectAttempts = 0;
         clearTimeout(jamReconnectTimer);
-        showToast(`Connected to Party Room!`);
         setJamSyncStatus('online');
         
         if (!isReconnect) {
+            showToast(`Connected to Party Room!`); // Sirf life mein ek baar (First time) dikhao
             document.getElementById("jam-lobby-view").classList.add("hide");
             document.getElementById("jam-room-view").classList.remove("hide");
             document.getElementById("jam-room-code-display").innerText = currentRoomCode;

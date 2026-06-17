@@ -71,6 +71,10 @@ function initMobileAudioUnlock() {
     document.body.appendChild(overlay);
     
     const unlock = () => {
+        // 🔥 iOS AUDIO FIX 1: Initialize the real Equalizer immediately on first screen tap
+        if (window.initEqualizer) window.initEqualizer(audio);
+        if (window.resumeAudioContext) window.resumeAudioContext();
+
         // Create and immediately suspend a AudioContext to unlock audio
         const ctx = new (window.AudioContext || window.webkitAudioContext)();
         const buf = ctx.createBuffer(1, 1, 22050);
@@ -676,6 +680,12 @@ function onSongPlayStateChange(isPlaying) {
 async function playSingleSong(track, autoplay = true) {
     if (!track) return;
     
+    // 🔥 iOS AUDIO FIX 2: Init & Resume AudioContext synchronously BEFORE any 'await' happens
+    if (autoplay) {
+        if (window.initEqualizer) window.initEqualizer(audio);
+        if (window.resumeAudioContext) window.resumeAudioContext();
+    }
+
     currentLoadedTrack = track;
     window.currentLoadedTrack = track; // global export
     
@@ -754,8 +764,6 @@ async function playSingleSong(track, autoplay = true) {
         }
         
         if (autoplay) {
-            window.initEqualizer(audio);
-            window.resumeAudioContext();
             audio.play().then(() => {
                 onSongPlayStateChange(true);
             }).catch(() => {
