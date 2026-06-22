@@ -1,3 +1,4 @@
+import os
 import time
 import threading
 from ytmusicapi import YTMusic
@@ -8,7 +9,11 @@ from collections import OrderedDict
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-ytmusic = YTMusic()
+COOKIES_PATH = os.path.join(os.path.dirname(__file__), '..', 'cookies.txt')
+if os.path.exists(COOKIES_PATH):
+    ytmusic = YTMusic(auth=COOKIES_PATH)
+else:
+    ytmusic = YTMusic()
 MAX_CACHE_SIZE = 100
 stream_cache = OrderedDict()
 CACHE_EXPIRY_SECONDS = 18000
@@ -86,7 +91,10 @@ def search_music(query: str, filter_type: str = None):
             })
         return standardized
     except Exception as e:
-        logger.error(f"Search failed: {e}")
+        if 'SSL' in str(e) or 'SSLError' in str(e):
+            logger.error(f"SSL/Network error — cookies may be expired: {e}")
+        else:
+            logger.error(f"Search failed: {e}")
         return []
 
 def get_suggestions(query: str):
@@ -113,7 +121,8 @@ def get_streaming_url(video_id: str) -> str:
         'no_warnings': True,
         'nocheckcertificate': True,
         'skip_download': True,
-        'extract_flat': False
+        'extract_flat': False,
+        'cookiefile': COOKIES_PATH if os.path.exists(COOKIES_PATH) else None,
     }
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
