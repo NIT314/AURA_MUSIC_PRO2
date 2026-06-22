@@ -131,6 +131,75 @@ def get_suggestions(query: str):
         logger.error(f"Failed to fetch suggestions: {e}")
         return []
 
+PIPED_INSTANCES = [
+    "https://pipedapi.kavin.rocks",
+    "https://pipedapi.leptons.xyz",
+    "https://pipedapi.nosebs.ru",
+    "https://pipedapi-libre.kavin.rocks",
+    "https://piped-api.privacy.com.de",
+    "https://pipedapi.adminforge.de",
+    "https://api.piped.yt",
+]
+
+def _get_piped_stream(video_id: str) -> str:
+    import httpx
+    for instance in PIPED_INSTANCES:
+        try:
+            url = f"{instance}/streams/{video_id}"
+            logger.info(f"Trying Piped stream fallback via {instance}...")
+            response = httpx.get(url, follow_redirects=True, timeout=5.0)
+            if response.status_code == 200:
+                data = response.json()
+                audio_streams = data.get("audioStreams", [])
+                if audio_streams:
+                    def get_bitrate(x):
+                        q = x.get("quality", "0")
+                        q_num = "".join(filter(str.isdigit, q))
+                        return int(q_num) if q_num else 0
+                    audio_streams.sort(key=get_bitrate, reverse=True)
+                    stream_url = audio_streams[0].get("url")
+                    if stream_url:
+                        logger.info(f"Piped fallback succeeded via {instance}")
+                        return stream_url
+        except Exception as e:
+            logger.warning(f"Piped fallback failed for {instance}: {e}")
+    return None
+
+INVIDIOUS_INSTANCES = [
+    "https://inv.nadeko.net",
+    "https://invidious.nerdvpn.de", 
+    "https://invidious.privacyredirect.com",
+    "https://yt.cdaut.de",
+    "https://invidious.flokinet.to",
+    "https://invidious.lunar.icu",
+]
+
+def _get_invidious_stream(video_id: str) -> str:
+    import httpx
+    for instance in INVIDIOUS_INSTANCES:
+        try:
+            url = f"{instance}/api/v1/videos/{video_id}"
+            logger.info(f"Trying Invidious stream fallback via {instance}...")
+            response = httpx.get(url, params={"local": "true"}, follow_redirects=True, timeout=5.0)
+            if response.status_code == 200:
+                data = response.json()
+                adaptive_formats = data.get("adaptiveFormats", [])
+                audio_streams = [
+                    f for f in adaptive_formats 
+                    if f.get("type", "").startswith("audio/") or f.get("mimeType", "").startswith("audio/")
+                ]
+                if audio_streams:
+                    audio_streams.sort(key=lambda x: int(x.get("bitrate", 0) or 0), reverse=True)
+                    stream_url = audio_streams[0].get("url")
+                    if stream_url:
+                        if stream_url.startswith("/"):
+                            stream_url = f"{instance}{stream_url}"
+                        logger.info(f"Invidious fallback succeeded via {instance}")
+                        return stream_url
+        except Exception as e:
+            logger.warning(f"Invidious fallback failed for {instance}: {e}")
+    return None
+
 def get_streaming_url(video_id: str) -> str:
     now = time.time()
     with cache_lock:
@@ -158,6 +227,8 @@ def get_streaming_url(video_id: str) -> str:
             }
         }
     }
+    
+    # 1. Try yt-dlp primary stream resolver
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             url = f"https://www.youtube.com/watch?v={video_id}"
@@ -179,11 +250,34 @@ def get_streaming_url(video_id: str) -> str:
                     if len(stream_cache) > MAX_CACHE_SIZE:
                         stream_cache.popitem(last=False)
                 return stream_url
-            else:
-                raise Exception("No direct format URL found in yt-dlp metadata")
     except Exception as e:
-        logger.error(f"Failed to extract direct stream for {video_id}: {e}")
-        raise e
+        logger.warning(f"yt-dlp primary extraction failed for {video_id}: {e}. Trying fallbacks...")
+
+    # 2. Try Piped API secondary fallback
+    stream_url = _get_piped_stream(video_id)
+    if stream_url:
+        with cache_lock:
+            stream_cache[video_id] = {
+                "url": stream_url,
+                "expires": now + CACHE_EXPIRY_SECONDS
+            }
+            if len(stream_cache) > MAX_CACHE_SIZE:
+                stream_cache.popitem(last=False)
+        return stream_url
+
+    # 3. Try Invidious API tertiary fallback
+    stream_url = _get_invidious_stream(video_id)
+    if stream_url:
+        with cache_lock:
+            stream_cache[video_id] = {
+                "url": stream_url,
+                "expires": now + CACHE_EXPIRY_SECONDS
+            }
+            if len(stream_cache) > MAX_CACHE_SIZE:
+                stream_cache.popitem(last=False)
+        return stream_url
+
+    raise Exception(f"All stream extraction methods failed for video_id={video_id}")
 
 def get_related_tracks(video_id: str):
     try:
