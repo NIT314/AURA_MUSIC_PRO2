@@ -10,11 +10,24 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 logger.info(f"yt-dlp version: {yt_dlp.version.__version__}")
 
-COOKIES_PATH = (
-    '/etc/secrets/cookies.txt'
-    if os.path.exists('/etc/secrets/cookies.txt')
-    else os.path.join(os.path.dirname(__file__), '..', 'cookies.txt')
-)
+import shutil
+
+_SECRET_COOKIES = '/etc/secrets/cookies.txt'
+_LOCAL_COOKIES = os.path.join(os.path.dirname(__file__), '..', 'cookies.txt')
+_TMP_COOKIES = '/tmp/cookies.txt'
+
+def _resolve_cookies_path():
+    if os.path.exists(_SECRET_COOKIES):
+        try:
+            shutil.copy2(_SECRET_COOKIES, _TMP_COOKIES)
+            return _TMP_COOKIES
+        except Exception:
+            return _SECRET_COOKIES
+    elif os.path.exists(_LOCAL_COOKIES):
+        return _LOCAL_COOKIES
+    return None
+
+COOKIES_PATH = _resolve_cookies_path()
 ytmusic = YTMusic()
 MAX_CACHE_SIZE = 100
 stream_cache = OrderedDict()
