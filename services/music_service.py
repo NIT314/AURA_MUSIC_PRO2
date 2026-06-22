@@ -21,10 +21,60 @@ stream_cache = OrderedDict()
 CACHE_EXPIRY_SECONDS = 18000
 cache_lock = threading.Lock()
 
+INVIDIOUS_INSTANCES = [
+    "https://inv.nadeko.net",
+    "https://invidious.nerdvpn.de",
+    "https://invidious.privacyredirect.com",
+    "https://yt.cdaut.de",
+]
+
+def _search_invidious(query: str, filter_type: str = None):
+    import httpx
+    for instance in INVIDIOUS_INSTANCES:
+        try:
+            url = f"{instance}/api/v1/search"
+            params = {"q": query, "type": "video", "n": 20}
+            response = httpx.get(url, params=params, timeout=8.0)
+            if response.status_code != 200:
+                continue
+            data = response.json()
+            standardized = []
+            for item in data:
+                if item.get("type") != "video":
+                    continue
+                duration_sec = item.get("lengthSeconds", 0)
+                m, s = divmod(int(duration_sec), 60)
+                duration_str = f"{m}:{s:02d}"
+                thumbnail = ""
+                thumbnails = item.get("videoThumbnails", [])
+                if thumbnails:
+                    thumbnail = thumbnails[0].get("url", "")
+                    if thumbnail.startswith("/"):
+                        thumbnail = f"{instance}{thumbnail}"
+                standardized.append({
+                    "id": item.get("videoId", ""),
+                    "title": item.get("title", ""),
+                    "artist": item.get("author", "Unknown Artist"),
+                    "artistId": item.get("authorId", ""),
+                    "album": "",
+                    "albumId": "",
+                    "thumbnail": thumbnail,
+                    "duration": duration_str,
+                    "durationSeconds": duration_sec,
+                    "type": "song",
+                    "year": ""
+                })
+            if standardized:
+                logger.info(f"Invidious search success via {instance}")
+                return standardized
+        except Exception as e:
+            logger.warning(f"Invidious instance {instance} failed: {e}")
+            continue
+    return []
+
 def search_music(query: str, filter_type: str = None):
     try:
         search_query = f"ytsearch50:{query}"
-        
         ydl_opts = {
             'quiet': True,
             'no_warnings': True,
@@ -33,32 +83,25 @@ def search_music(query: str, filter_type: str = None):
             'force_ipv4': True,
             'cookiefile': COOKIES_PATH if os.path.exists(COOKIES_PATH) else None,
         }
-        
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(search_query, download=False)
             entries = info.get('entries', [])
-        
         standardized = []
         for item in entries:
             if not item:
                 continue
-            
             duration_sec = item.get('duration', 0) or 0
             m, s = divmod(int(duration_sec), 60)
             duration_str = f"{m}:{s:02d}"
-            
             thumbnail = ""
             thumbnails = item.get('thumbnails', [])
             if thumbnails:
                 thumbnail = thumbnails[-1].get('url', '')
-            
             artist_name = item.get('uploader', '') or item.get('channel', '') or 'Unknown Artist'
             artist_name = artist_name.replace(' - Topic', '')
-            
             video_id = item.get('id', '') or item.get('url', '')
             if not video_id:
                 continue
-                
             standardized.append({
                 "id": video_id,
                 "title": item.get('title', ''),
@@ -72,15 +115,16 @@ def search_music(query: str, filter_type: str = None):
                 "type": "song",
                 "year": str(item.get('upload_date', ''))[:4] if item.get('upload_date') else ""
             })
-        
-        return standardized
-        
+        if standardized:
+            return standardized
+        logger.warning("yt-dlp search returned empty, trying Invidious fallback")
+        return _search_invidious(query, filter_type)
     except Exception as e:
         if 'SSL' in str(e) or 'SSLError' in str(e):
-            logger.error(f"SSL/Network error in search: {e}")
+            logger.error(f"SSL/Network error in search, trying Invidious fallback: {e}")
         else:
-            logger.error(f"Search failed: {e}")
-        return []
+            logger.error(f"Search failed, trying Invidious fallback: {e}")
+        return _search_invidious(query, filter_type)
 
 def get_suggestions(query: str):
     try:
