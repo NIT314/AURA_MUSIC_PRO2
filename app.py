@@ -35,8 +35,8 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:8000", "http://127.0.0.1:8000"],
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -53,11 +53,14 @@ def api_suggestions(q: str):
 @app.get("/api/stream")
 @limiter.limit("120/minute") # Stream ke liye thodi limit zyada rakhi hai taaki gaana aage-peeche karne par block na ho
 async def api_stream(video_id: str, request: Request):
+    print(f"DEBUG: Fetching stream for ID {video_id}", flush=True)
+    logger.info(f"Stream request received for video_id={video_id}")
     try:
         stream_url = get_streaming_url(video_id)
+        logger.info(f"Stream URL resolved for {video_id}: {stream_url[:80]}...")
     except Exception as e:
         logger.error(f"Stream resolution error for {video_id}: {e}")
-        raise HTTPException(status_code=404, detail="Track streaming source not found")
+        raise HTTPException(status_code=404, detail=f"Track streaming source not found: {e}")
 
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"

@@ -1,6 +1,7 @@
 import os
 import time
 import threading
+import shutil
 from ytmusicapi import YTMusic
 import yt_dlp
 import logging
@@ -9,8 +10,6 @@ from collections import OrderedDict
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 logger.info(f"yt-dlp version: {yt_dlp.version.__version__}")
-
-import shutil
 
 _SECRET_COOKIES = '/etc/secrets/cookies.txt'
 _LOCAL_COOKIES = os.path.join(os.path.dirname(__file__), '..', 'cookies.txt')
@@ -45,7 +44,7 @@ def search_music(query: str, filter_type: str = None):
             'nocheckcertificate': True,
             'extract_flat': True,
             'force_ipv4': True,
-            'cookiefile': COOKIES_PATH if os.path.exists(COOKIES_PATH) else None,
+            'cookiefile': COOKIES_PATH if COOKIES_PATH and os.path.exists(COOKIES_PATH) else None,
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(search_query, download=False)
@@ -97,7 +96,7 @@ def get_suggestions(query: str):
             'nocheckcertificate': True,
             'extract_flat': True,
             'force_ipv4': True,
-            'cookiefile': COOKIES_PATH if os.path.exists(COOKIES_PATH) else None,
+            'cookiefile': COOKIES_PATH if COOKIES_PATH and os.path.exists(COOKIES_PATH) else None,
         }
         
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -126,15 +125,16 @@ def get_streaming_url(video_id: str) -> str:
             else:
                 del stream_cache[video_id]
 
+    logger.info(f"get_streaming_url called for video_id={video_id}")
     ydl_opts = {
-        'format': 'bestaudio[ext=m4a]/bestaudio/best', # 🔥 M4A format force karega jo Mobile/Safari par smoothly chalta hai
-        'quiet': True,
-        'no_warnings': True,
+        'format': 'bestaudio[ext=m4a]/bestaudio/best',
+        'quiet': False,
+        'no_warnings': False,
         'nocheckcertificate': True,
         'skip_download': True,
         'extract_flat': False,
         'force_ipv4': True,
-        'cookiefile': COOKIES_PATH if os.path.exists(COOKIES_PATH) else None,
+        'cookiefile': COOKIES_PATH if COOKIES_PATH and os.path.exists(COOKIES_PATH) else None,
     }
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
