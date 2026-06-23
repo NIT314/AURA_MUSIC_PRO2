@@ -642,9 +642,8 @@ function renderCategories() {
 
 async function fetchSuggestions(q) {
     try {
-        const suggestions = window.YTClient
-            ? await window.YTClient.suggestions(q)
-            : await fetch(`/api/suggestions?q=${encodeURIComponent(q)}`).then(r => r.json());
+        const res = await fetch(`/api/suggestions?q=${encodeURIComponent(q)}`);
+        const suggestions = await res.json();
         renderSuggestionsUI(suggestions);
     } catch (e) {
         console.error("Suggestions fetch error:", e);
@@ -699,9 +698,9 @@ async function performSearch(q, filter) {
     document.getElementById("search-results-title").innerText = `Results for "${q}"`;
 
     try {
-        const results = window.YTClient
-            ? await window.YTClient.search(q, filter)
-            : await fetch(`/api/search?q=${encodeURIComponent(q)}&filter=${filter}`).then(r => r.json());
+        const url = `/api/search?q=${encodeURIComponent(q)}&filter=${filter}`;
+        const res = await fetch(url);
+        const results = await res.json();
         searchResultsCache = results;
         renderSearchResults(results);
     } catch (err) {
@@ -1254,20 +1253,9 @@ async function playSingleSong(track, autoplay = true, fromJamSync = false) {
     // 2. Fetch lyrics asynchronously in background
     loadSyncedLyrics(track);
 
-    // Reset seekbar at start of every new song
-    const _seekbar = document.getElementById("player-seekbar");
-    if (_seekbar) {
-        _seekbar.value = 0;
-        _seekbar.style.background = 'linear-gradient(to right, var(--gold) 0%, rgba(255,255,255,0.1) 0%)';
-    }
-    const _miniProg = document.getElementById("mini-progress-fill");
-    if (_miniProg) _miniProg.style.width = "0%";
-    const _timeCur = document.getElementById("player-time-current");
-    if (_timeCur) _timeCur.innerText = "0:00";
-
     // 3. Play stream
     try {
-        // Stop and clear previous source
+        // Pehle purana audio properly band karo
         audio.pause();
         audio.src = "";
         audio.load();
@@ -1282,7 +1270,7 @@ async function playSingleSong(track, autoplay = true, fromJamSync = false) {
                 return;
             }
         } else {
-            // Check if track is cached offline first
+            // Check if track is cached offline first!
             const cache = await caches.open("aura-audio-cache");
             const cacheKey = `/api/stream?video_id=${track.id}`;
             const cachedResponse = await cache.match(cacheKey);
@@ -1293,17 +1281,15 @@ async function playSingleSong(track, autoplay = true, fromJamSync = false) {
                 audio.src = URL.createObjectURL(audioBlob);
                 showToast("Playing Offline Saved Audio 📶");
             } else {
-                // Try direct stream URL first (enables EQ + Web Audio API)
-                // Falls back to IFrame via youtube-shim.js if null
-                const directUrl = window.YTClient ? await window.YTClient.getStreamUrl(track.id) : null;
-                audio.src = directUrl || `/api/stream?video_id=${track.id}`;
+                // Online stream proxy
+                audio.src = `/api/stream?video_id=${track.id}`;
             }
         }
 
-        // Load new source
+        // Naya source load karo
         audio.load();
-
-        if (autoplay) {
+            
+            if (autoplay) {
             audio.play().then(() => {
                 onSongPlayStateChange(true);
             }).catch((err) => {
@@ -2855,9 +2841,8 @@ async function loadArtistDetailPanel(channelId) {
     panel.classList.remove("hide");
 
     try {
-        const data = window.YTClient
-            ? await window.YTClient.getArtistDetails(channelId)
-            : await fetch(`/api/artists/${channelId}`).then(r => r.json());
+        const res = await fetch(`/api/artists/${channelId}`);
+        const data = await res.json();
         
         // Cache popular songs in searchResultsCache
         if (data.popularSongs) {
@@ -2940,9 +2925,8 @@ async function loadAlbumDetailPanel(browseId) {
     panel.classList.remove("hide");
 
     try {
-        const data = window.YTClient
-            ? await window.YTClient.getAlbumDetails(browseId)
-            : await fetch(`/api/albums/${browseId}`).then(r => r.json());
+        const res = await fetch(`/api/albums/${browseId}`);
+        const data = await res.json();
         
         // Cache album tracks in searchResultsCache
         if (data.tracks) {
@@ -3025,9 +3009,8 @@ async function loadHomeData() {
         }
 
         // Query trending
-        const trendData = window.YTClient
-            ? await window.YTClient.search("trending global hits", "songs")
-            : await fetch("/api/search?q=trending%20global%20hits&filter=songs").then(r => r.json());
+        const trendRes = await fetch("/api/search?q=trending%20global%20hits&filter=songs");
+        const trendData = await trendRes.json();
 
         // Cache mein save karo
         localStorage.setItem("aura_home_trending", JSON.stringify(trendData));
@@ -3059,9 +3042,8 @@ async function loadHomeData() {
         });
 
         // Query new releases
-        const newData = window.YTClient
-            ? await window.YTClient.search("latest music releases", "songs")
-            : await fetch("/api/search?q=latest%20music%20releases&filter=songs").then(r => r.json());
+        const newRes = await fetch("/api/search?q=latest%20music%20releases&filter=songs");
+        const newData = await newRes.json();
 
         // Cache mein save karo
         localStorage.setItem("aura_home_new", JSON.stringify(newData));
