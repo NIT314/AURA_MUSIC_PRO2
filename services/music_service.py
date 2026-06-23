@@ -69,6 +69,10 @@ def search_music(query: str, filter_type: str = None):
             
             # Map videoId or browseId or playlistId
             video_id = item.get('videoId') or item.get('browseId') or item.get('playlistId')
+            if not video_id and res_type == 'artist':
+                artists = item.get('artists', [])
+                if artists:
+                    video_id = artists[0].get('id')
             if not video_id:
                 continue
             
@@ -122,7 +126,7 @@ def search_music(query: str, filter_type: str = None):
             # Set title field appropriately
             title = item.get('title') or item.get('name') or artist_name
             if res_type == 'artist':
-                title = item.get('artist') or item.get('name') or 'Unknown Artist'
+                title = item.get('artist') or item.get('name') or artist_name or 'Unknown Artist'
 
             standardized.append({
                 "id": video_id,
