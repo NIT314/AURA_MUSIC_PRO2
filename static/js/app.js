@@ -1257,6 +1257,22 @@ async function playSingleSong(track, autoplay = true, fromJamSync = false) {
     try {
         // Pehle purana audio properly band karo
         audio.pause();
+
+        // Reset seekbar and timer UI to 0
+        const seekbar = document.getElementById("player-seekbar");
+        const currentTimer = document.getElementById("player-time-current");
+        const miniProgressFill = document.getElementById("mini-progress-fill");
+        if (seekbar) {
+            seekbar.value = 0;
+            seekbar.style.background = `linear-gradient(to right, var(--gold) 0%, rgba(255,255,255,0.1) 0%)`;
+        }
+        if (currentTimer) {
+            currentTimer.innerText = "0:00";
+        }
+        if (miniProgressFill) {
+            miniProgressFill.style.width = "0%";
+        }
+
         audio.src = "";
         audio.load();
 
@@ -1289,16 +1305,30 @@ async function playSingleSong(track, autoplay = true, fromJamSync = false) {
         // Naya source load karo
         audio.load();
             
-            if (autoplay) {
-            audio.play().then(() => {
-                onSongPlayStateChange(true);
-            }).catch((err) => {
-                console.error("Playback load notice:", err);
-                onSongPlayStateChange(false);
-                if (err.name !== 'AbortError') {
-                    showToast("Buffering... Press Play again if it stops.");
-                }
-            });
+        if (autoplay) {
+            const onCanPlay = () => {
+                audio.play().then(() => {
+                    onSongPlayStateChange(true);
+                }).catch((err) => {
+                    console.error("Playback load notice:", err);
+                    onSongPlayStateChange(false);
+                    if (err.name !== 'AbortError') {
+                        showToast("Buffering... Press Play again if it stops.");
+                    }
+                });
+            };
+
+            // Clean up old handler if any to prevent duplicate calls
+            if (audio._onCanPlayHandler) {
+                audio.removeEventListener("canplay", audio._onCanPlayHandler);
+            }
+            audio._onCanPlayHandler = onCanPlay;
+            audio.addEventListener("canplay", onCanPlay, { once: true });
+        } else {
+            if (audio._onCanPlayHandler) {
+                audio.removeEventListener("canplay", audio._onCanPlayHandler);
+                audio._onCanPlayHandler = null;
+            }
         }
     } catch (err) {
         console.error("Stream load failed:", err);
