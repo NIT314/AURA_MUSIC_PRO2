@@ -41,6 +41,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.get("/api/health")
+def api_health():
+    return {"status": "ok"}
+
 @app.get("/api/search")
 @limiter.limit("60/minute") # Ek user 1 minute mein max 60 search kar sakta hai
 async def api_search(request: Request, q: str = Query(..., min_length=1), filter: str = None):

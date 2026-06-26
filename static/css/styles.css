@@ -278,9 +278,9 @@ html, body {
 
 /* Header Styles */
 #app-header {
-    height: 90px;
-    min-height: 90px;
-    padding: 0 40px;
+    height: calc(90px + env(safe-area-inset-top, 0px));
+    min-height: calc(90px + env(safe-area-inset-top, 0px));
+    padding: env(safe-area-inset-top, 0px) 40px 0;
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -2573,9 +2573,9 @@ input:checked + .slider-round:before {
 
     /* Header compact */
     #app-header {
-        height: 64px;
-        min-height: 64px;
-        padding: 0 16px;
+        height: calc(64px + env(safe-area-inset-top, 0px));
+        min-height: calc(64px + env(safe-area-inset-top, 0px));
+        padding: env(safe-area-inset-top, 0px) 16px 0;
     }
 
     .header-greeting {
@@ -3497,3 +3497,224 @@ input:checked + .slider-round:before {
     display: none !important;
 }
 
+/* ==========================================
+   MODE SYSTEM — Lite/Pro Connection UI
+   ========================================== */
+
+/* Sidebar Mode Button (Desktop) */
+.mode-status-btn {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border-glass);
+    color: var(--text-primary);
+    padding: 10px 12px;
+    border-radius: 12px;
+    font-family: var(--font-body);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: var(--transition-smooth);
+    margin-bottom: 8px;
+}
+.mode-status-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+/* Status Dot (shared component) */
+.mode-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+    flex-shrink: 0;
+    transition: background 0.3s, box-shadow 0.3s;
+}
+.mode-dot.lite {
+    background: #ef4444;
+    box-shadow: 0 0 6px rgba(239, 68, 68, 0.5);
+}
+.mode-dot.pro {
+    background: #22c55e;
+    box-shadow: 0 0 6px rgba(34, 197, 94, 0.5);
+}
+
+/* Header Mode Button (Mobile/Compact) */
+.mode-status-header-btn {
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--border-glass);
+    border-radius: 50%;
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: var(--transition-smooth);
+    padding: 0;
+}
+.mode-status-header-btn:hover {
+    background: rgba(255, 255, 255, 0.12);
+    transform: scale(1.05);
+}
+
+/* Mode Dropdown Overlay (Bottom Sheet) */
+.mode-dropdown-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+    z-index: 1100;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    animation: modeFadeIn 0.2s ease;
+}
+.mode-dropdown-overlay.hide {
+    display: none !important;
+}
+@keyframes modeFadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.mode-dropdown {
+    width: min(440px, 95vw);
+    border-radius: 20px 20px 0 0;
+    padding: 20px;
+    padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+    max-height: 75vh;
+    overflow-y: auto;
+    animation: modeSlideUp 0.25s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+@keyframes modeSlideUp {
+    from { transform: translateY(100%); }
+    to { transform: translateY(0); }
+}
+
+.mode-dropdown-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+}
+.mode-dropdown-header h4 {
+    font-family: var(--font-header);
+    font-size: 18px;
+    font-weight: 600;
+}
+
+/* Mode Option Buttons */
+.mode-option {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--border-glass);
+    border-radius: 12px;
+    padding: 14px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    color: var(--text-primary);
+    font-family: var(--font-body);
+    text-align: left;
+    transition: var(--transition-smooth);
+}
+.mode-option:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+.mode-option.active {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: var(--gold);
+    box-shadow: 0 0 12px rgba(223, 193, 93, 0.1);
+}
+.mode-option-info {
+    flex: 1;
+    min-width: 0;
+}
+.mode-option-info strong {
+    display: block;
+    font-size: 14px;
+    font-weight: 600;
+}
+.mode-option-info small {
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+/* URL Input Section */
+#mode-url-section {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border-glass);
+}
+#mode-url-section label {
+    display: block;
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+    font-family: var(--font-body);
+}
+.mode-url-input-row {
+    display: flex;
+    gap: 8px;
+}
+.mode-url-input-row input {
+    flex: 1;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--border-glass);
+    border-radius: 12px;
+    padding: 10px 14px;
+    color: #fff;
+    font-size: 13px;
+    outline: none;
+    font-family: var(--font-body);
+    min-width: 0;
+}
+.mode-url-input-row input:focus {
+    border-color: var(--gold);
+}
+.mode-connection-status {
+    font-size: 12px;
+    margin-top: 8px;
+    padding: 6px 10px;
+    border-radius: 8px;
+    font-family: var(--font-body);
+}
+.mode-connection-status.checking {
+    color: var(--blue);
+    background: rgba(0, 180, 216, 0.1);
+}
+.mode-connection-status.success {
+    color: #22c55e;
+    background: rgba(34, 197, 94, 0.1);
+}
+.mode-connection-status.error {
+    color: #ef4444;
+    background: rgba(239, 68, 68, 0.1);
+}
+
+/* Connected Section */
+#mode-connected-section {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border-glass);
+}
+.mode-connected-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--text-primary);
+    padding: 8px 0;
+    word-break: break-all;
+    font-family: var(--font-body);
+}
+.mode-connected-actions {
+    display: flex;
+    gap: 12px;
+    margin-top: 8px;
+}

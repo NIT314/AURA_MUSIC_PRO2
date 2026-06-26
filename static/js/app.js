@@ -63,6 +63,11 @@ let repeatMode = "off"; // "off" | "list" | "track"
 let isShuffleOn = false;
 let shuffledQueueOrder = null; // array of indices, when shuffle is active
 
+// Lite/Pro Mode state
+let auraMode = "lite";           // "pro" | "lite"
+let auraBackendUrl = "";         // user-supplied backend URL
+let healthCheckIntervalId = null;
+
 // DOM Elements
 const audio = document.getElementById("audio-element");
 if (audio) {
@@ -97,6 +102,9 @@ document.addEventListener("DOMContentLoaded", () => {
     
     // Load Initial Home Data
     loadHomeData();
+    
+    // Initialize Lite/Pro mode detection
+    initModeSystem();
     
     // Check if a track was shared
     checkSharedTrack();
@@ -173,11 +181,15 @@ const storeName = "local_songs";
 
 function initDB() {
     return new Promise((resolve, reject) => {
-        const request = indexedDB.open(dbName, 1);
+        const request = indexedDB.open(dbName, 2);
         request.onupgradeneeded = (e) => {
             const db = e.target.result;
             if (!db.objectStoreNames.contains(storeName)) {
                 db.createObjectStore(storeName, { keyPath: "id" });
+            }
+            // v2: key-value config store for backend URL etc.
+            if (!db.objectStoreNames.contains("config")) {
+                db.createObjectStore("config", { keyPath: "key" });
             }
         };
         request.onsuccess = (e) => resolve(e.target.result);
@@ -241,6 +253,46 @@ async function deleteLocalSongFromDB(id) {
         request.onsuccess = () => resolve();
         request.onerror = (e) => reject(e.target.error);
     });
+}
+
+// IndexedDB config store helpers
+async function getConfigValue(key) {
+    try {
+        const db = await initDB();
+        return new Promise((resolve) => {
+            const tx = db.transaction("config", "readonly");
+            const store = tx.objectStore("config");
+            const req = store.get(key);
+            req.onsuccess = () => resolve(req.result ? req.result.value : null);
+            req.onerror = () => resolve(null);
+        });
+    } catch { return null; }
+}
+
+async function setConfigValue(key, value) {
+    try {
+        const db = await initDB();
+        return new Promise((resolve) => {
+            const tx = db.transaction("config", "readwrite");
+            const store = tx.objectStore("config");
+            store.put({ key, value });
+            tx.oncomplete = () => resolve(true);
+            tx.onerror = () => resolve(false);
+        });
+    } catch { return false; }
+}
+
+async function deleteConfigValue(key) {
+    try {
+        const db = await initDB();
+        return new Promise((resolve) => {
+            const tx = db.transaction("config", "readwrite");
+            const store = tx.objectStore("config");
+            store.delete(key);
+            tx.oncomplete = () => resolve(true);
+            tx.onerror = () => resolve(false);
+        });
+    } catch { return false; }
 }
 
 // 1. STATE MANAGEMENT
@@ -441,6 +493,10 @@ function initTabNavigation() {
 
     // Connect both desktop sidebar buttons and mobile tab bar buttons (we will create mobile tabs dynamically)
     function switchTab(tabId) {
+        if (auraMode === "lite" && (tabId === "jam" || tabId === "equalizer")) {
+            showToast(`${tabId === "jam" ? "AURA JAM" : "Equalizer"} is only available in Pro Mode.`);
+            return;
+        }
         const fullPlayer = document.getElementById("full-player");
         if (fullPlayer && fullPlayer.classList.contains("player-open")) {
             fullPlayer.classList.remove("player-open");
@@ -654,6 +710,9 @@ function renderCategories() {
 }
 
 async function fetchSuggestions(q) {
+    if (auraMode === "lite") {
+        return fetchSuggestionsLite(q);
+    }
     try {
         const res = await fetch(`/api/suggestions?q=${encodeURIComponent(q)}`);
         const suggestions = await res.json();
@@ -709,6 +768,10 @@ async function performSearch(q, filter) {
     `;
     resultsView.classList.remove("hide");
     document.getElementById("search-results-title").innerText = `Results for "${q}"`;
+
+    if (auraMode === "lite") {
+        return performSearchLite(q, filter, resultsContainer);
+    }
 
     try {
         const url = `/api/search?q=${encodeURIComponent(q)}&filter=${filter}`;
@@ -1369,6 +1432,10 @@ async function playSingleSong(track, autoplay = true, fromJamSync = false, keepI
                 showToast("Playing Offline Saved Audio 📶");
             } else {
                 // Online stream proxy
+                if (auraMode === "lite") {
+                    showToast("Pro Mode Server connection required to stream this song.");
+                    return;
+                }
                 audio.src = `/api/stream?video_id=${track.id}`;
             }
         }
@@ -1535,6 +1602,12 @@ async function playInfiniteNextTrack() {
     if (infiniteQueue && infiniteQueue.length > 0) {
         nextTrack = infiniteQueue.shift();
     } else {
+        if (auraMode === "lite") {
+            showToast("Infinite autoplay requires Pro Mode server.");
+            audio.pause();
+            onSongPlayStateChange(false);
+            return;
+        }
         try {
             showToast("Fetching infinite recommendations... ⚡");
             const profile = {
@@ -1726,6 +1799,9 @@ function addToListeningHistory(track) {
 let lyricsTimeline = [];
 
 async function loadSyncedLyrics(track) {
+    if (auraMode === "lite") {
+        return loadSyncedLyricsLite(track);
+    }
     const container = document.getElementById("lyrics-lines-container");
     container.innerHTML = `<div class="lyrics-loading"><i class="fa-solid fa-spinner fa-spin"></i> Loading lyrics...</div>`;
     
@@ -2151,6 +2227,11 @@ async function downloadActiveTrack() {
 
 async function downloadTrackFromRow(event, trackId) {
     if (event) event.stopPropagation(); // Stop playing click
+    
+    if (auraMode === "lite") {
+        showToast("Downloads require a Pro Mode server connection.");
+        return;
+    }
     
     // Find track details from loaded track or queue
     let track = null;
@@ -3210,6 +3291,10 @@ async function loadHomeData() {
     const CACHE_DURATION = 30 * 60 * 1000; // 30 minutes
     const now = Date.now();
 
+    if (auraMode === "lite") {
+        return loadHomeDataLite(trendContainer, newContainer, CACHE_DURATION, now);
+    }
+
     try {
         const cachedTrend = localStorage.getItem("aura_home_trending");
         const cachedNew = localStorage.getItem("aura_home_new");
@@ -3314,6 +3399,10 @@ function renderHomeCards(data, container) {
 
 // Spark AURA Flow click
 document.getElementById("start-aura-flow-btn").addEventListener("click", async () => {
+    if (auraMode === "lite") {
+        showToast("AURA Flow AI DJ requires a Pro Mode server connection.");
+        return;
+    }
     showToast("AURA Flow AI DJ suggestions triggered ⚡");
     
     try {
@@ -4074,6 +4163,10 @@ async function handleActionSheetAction(action) {
         }
             
         case "jam":
+            if (auraMode === "lite") {
+                showToast("AURA JAM requires a Pro Mode server connection.");
+                return;
+            }
             if (window.isInsideJam && window.isInsideJam()) {
                 const role = window.getJamRole ? window.getJamRole() : 'listener';
                 const addOnlyMode = window.getJamAddOnlyMode && window.getJamAddOnlyMode();
@@ -4099,6 +4192,10 @@ async function handleActionSheetAction(action) {
             break;
             
         case "radio":
+            if (auraMode === "lite") {
+                showToast("Song Radio requires a Pro Mode server connection.");
+                return;
+            }
             showToast(`Starting song radio for "${track.title}"... ⚡`);
             try {
                 const res = await fetch(`/api/recommendations?video_id=${track.id}`);
@@ -4672,3 +4769,557 @@ window.unhideTrack = (trackId) => {
     
     showToast("Song unhidden");
 };
+
+// ==========================================================================
+// LITE/PRO MODE SYSTEM — Connection detection, health checks, UI
+// ==========================================================================
+
+const HEALTH_CHECK_TIMEOUT_MS = 3500;
+const HEALTH_CHECK_INTERVAL_MS = 45000;
+
+async function initModeSystem() {
+    // Inject mode dot into header (visible on both desktop + mobile)
+    const headerActions = document.querySelector(".header-actions");
+    if (headerActions && !document.getElementById("header-mode-btn")) {
+        const modeBtn = document.createElement("button");
+        modeBtn.id = "header-mode-btn";
+        modeBtn.className = "mode-status-header-btn";
+        modeBtn.title = "Connection Mode";
+        modeBtn.innerHTML = `<span class="mode-dot lite"></span>`;
+        modeBtn.addEventListener("click", openModeDropdown);
+        headerActions.insertBefore(modeBtn, headerActions.firstChild);
+    }
+
+    // Desktop sidebar button
+    const sidebarBtn = document.getElementById("mode-toggle-btn");
+    if (sidebarBtn) sidebarBtn.addEventListener("click", openModeDropdown);
+
+    // Dropdown close handlers
+    const closeBtn = document.getElementById("close-mode-dropdown-btn");
+    if (closeBtn) closeBtn.addEventListener("click", closeModeDropdown);
+
+    const overlay = document.getElementById("mode-dropdown-overlay");
+    if (overlay) {
+        overlay.addEventListener("click", (e) => {
+            if (e.target === overlay) closeModeDropdown();
+        });
+    }
+
+    // Option click handlers
+    document.getElementById("mode-opt-lite")?.addEventListener("click", () => {
+        // Lite selection — don't clear URL, just switch view focus
+        closeModeDropdown();
+    });
+
+    document.getElementById("mode-opt-pro")?.addEventListener("click", () => {
+        if (auraBackendUrl) {
+            // URL exists — show connection status section
+            _showConnectedSection();
+        } else {
+            // No URL — show input
+            _showUrlInputSection();
+        }
+    });
+
+    // Connect button
+    document.getElementById("connect-backend-btn")?.addEventListener("click", _handleConnectClick);
+
+    // Allow Enter key in URL input
+    document.getElementById("backend-url-input")?.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") _handleConnectClick();
+    });
+
+    // Change link button
+    document.getElementById("change-backend-url-btn")?.addEventListener("click", () => {
+        const urlInput = document.getElementById("backend-url-input");
+        if (urlInput) urlInput.value = auraBackendUrl;
+        _showUrlInputSection();
+    });
+
+    // Disconnect button
+    document.getElementById("disconnect-backend-btn")?.addEventListener("click", async () => {
+        await clearBackendUrl();
+        closeModeDropdown();
+        showToast("Disconnected — Lite Mode active");
+    });
+
+    // Load saved URL and run initial health check
+    try {
+        const savedUrl = await getConfigValue("backend_url");
+        if (savedUrl && typeof savedUrl === "string" && savedUrl.startsWith("http")) {
+            auraBackendUrl = savedUrl;
+            const isAlive = await checkBackendHealth();
+            setMode(isAlive ? "pro" : "lite");
+            if (!isAlive) {
+                showToast("Server offline, Lite Mode mein chal rahe ho.");
+            }
+        } else {
+            setMode("lite");
+        }
+    } catch (e) {
+        console.error("Mode init failed:", e);
+        setMode("lite");
+    }
+
+    // Start periodic health checks
+    _startHealthCheckLoop();
+}
+
+async function checkBackendHealth() {
+    if (!auraBackendUrl) return false;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), HEALTH_CHECK_TIMEOUT_MS);
+    try {
+        const res = await fetch(`${auraBackendUrl}/api/health`, {
+            signal: controller.signal,
+            mode: "cors",
+            cache: "no-store"
+        });
+        clearTimeout(timeoutId);
+        if (!res.ok) return false;
+        const data = await res.json();
+        return data.status === "ok";
+    } catch {
+        clearTimeout(timeoutId);
+        return false;
+    }
+}
+
+function setMode(newMode) {
+    const changed = auraMode !== newMode;
+    auraMode = newMode;
+    updateModeUI();
+    if (changed) {
+        window.dispatchEvent(new CustomEvent("aura-mode-change", {
+            detail: { mode: newMode, backendUrl: auraBackendUrl }
+        }));
+    }
+}
+
+function updateModeUI() {
+    const isPro = auraMode === "pro";
+    const dotClass = isPro ? "pro" : "lite";
+    const labelText = isPro ? "Pro Mode" : "Lite Mode";
+
+    // Update ALL mode dots in the DOM
+    document.querySelectorAll(".mode-dot").forEach(dot => {
+        // Skip dots inside the option buttons (they have fixed classes)
+        if (dot.closest(".mode-option") || dot.id === "mode-connected-dot") return;
+        dot.className = `mode-dot ${dotClass}`;
+    });
+
+    // Sidebar label
+    const sidebarLabel = document.querySelector("#mode-toggle-btn .mode-label");
+    if (sidebarLabel) sidebarLabel.textContent = labelText;
+
+    // Dropdown option highlights
+    const litOpt = document.getElementById("mode-opt-lite");
+    const proOpt = document.getElementById("mode-opt-pro");
+    if (litOpt) litOpt.classList.toggle("active", !isPro);
+    if (proOpt) proOpt.classList.toggle("active", isPro);
+
+    // Connected dot in dropdown
+    const connDot = document.getElementById("mode-connected-dot");
+    if (connDot) connDot.className = `mode-dot ${dotClass}`;
+}
+
+function _startHealthCheckLoop() {
+    if (healthCheckIntervalId) clearInterval(healthCheckIntervalId);
+    healthCheckIntervalId = setInterval(async () => {
+        if (!auraBackendUrl) return; // No URL saved, nothing to check
+        const isAlive = await checkBackendHealth();
+        if (auraMode === "pro" && !isAlive) {
+            setMode("lite");
+            showToast("Server offline, Lite Mode mein chal rahe ho.");
+        } else if (auraMode === "lite" && isAlive) {
+            setMode("pro");
+            showToast("Server reconnected, Pro Mode ⚡");
+        }
+    }, HEALTH_CHECK_INTERVAL_MS);
+}
+
+async function saveBackendUrl(rawUrl) {
+    // Normalize: trim, strip trailing slash, validate protocol
+    let url = rawUrl.trim().replace(/\/+$/, "");
+    if (!url.startsWith("http://") && !url.startsWith("https://")) {
+        url = "https://" + url;
+    }
+    auraBackendUrl = url;
+    await setConfigValue("backend_url", url);
+    return url;
+}
+
+async function clearBackendUrl() {
+    auraBackendUrl = "";
+    await deleteConfigValue("backend_url");
+    setMode("lite");
+}
+
+// --- Dropdown UI helpers ---
+
+function openModeDropdown() {
+    const overlay = document.getElementById("mode-dropdown-overlay");
+    if (!overlay) return;
+    overlay.classList.remove("hide");
+
+    // Reset sub-sections visibility based on current state
+    const urlSection = document.getElementById("mode-url-section");
+    const connSection = document.getElementById("mode-connected-section");
+    const statusEl = document.getElementById("mode-connection-status");
+
+    if (urlSection) urlSection.classList.add("hide");
+    if (connSection) connSection.classList.add("hide");
+    if (statusEl) { statusEl.textContent = ""; statusEl.className = "mode-connection-status"; }
+
+    // If we have a saved URL, show the connected section by default
+    if (auraBackendUrl) {
+        _showConnectedSection();
+    }
+
+    updateModeUI();
+}
+
+function closeModeDropdown() {
+    const overlay = document.getElementById("mode-dropdown-overlay");
+    if (overlay) overlay.classList.add("hide");
+}
+
+function _showUrlInputSection() {
+    const urlSection = document.getElementById("mode-url-section");
+    const connSection = document.getElementById("mode-connected-section");
+    if (urlSection) urlSection.classList.remove("hide");
+    if (connSection) connSection.classList.add("hide");
+    // Focus the input
+    setTimeout(() => {
+        document.getElementById("backend-url-input")?.focus();
+    }, 100);
+}
+
+function _showConnectedSection() {
+    const urlSection = document.getElementById("mode-url-section");
+    const connSection = document.getElementById("mode-connected-section");
+    const urlDisplay = document.getElementById("mode-connected-url");
+
+    if (urlSection) urlSection.classList.add("hide");
+    if (connSection) connSection.classList.remove("hide");
+
+    if (urlDisplay) {
+        // Show truncated URL for readability
+        try {
+            const parsed = new URL(auraBackendUrl);
+            urlDisplay.textContent = parsed.hostname;
+        } catch {
+            urlDisplay.textContent = auraBackendUrl;
+        }
+    }
+
+    // Update connected dot
+    const connDot = document.getElementById("mode-connected-dot");
+    if (connDot) connDot.className = `mode-dot ${auraMode === "pro" ? "pro" : "lite"}`;
+}
+
+async function _handleConnectClick() {
+    const urlInput = document.getElementById("backend-url-input");
+    const statusEl = document.getElementById("mode-connection-status");
+    const rawUrl = urlInput?.value?.trim();
+
+    if (!rawUrl) {
+        if (statusEl) {
+            statusEl.textContent = "Please enter a URL";
+            statusEl.className = "mode-connection-status error";
+        }
+        return;
+    }
+
+    // Show checking state
+    if (statusEl) {
+        statusEl.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin"></i> Checking connection...`;
+        statusEl.className = "mode-connection-status checking";
+    }
+
+    const url = await saveBackendUrl(rawUrl);
+    const isAlive = await checkBackendHealth();
+
+    if (isAlive) {
+        setMode("pro");
+        if (statusEl) {
+            statusEl.innerHTML = `<i class="fa-solid fa-check-circle"></i> Connected!`;
+            statusEl.className = "mode-connection-status success";
+        }
+        showToast("Pro Mode activated ⚡");
+        // Auto-close dropdown after success
+        setTimeout(closeModeDropdown, 800);
+    } else {
+        // Don't clear URL — user might want to retry or fix
+        setMode("lite");
+        if (statusEl) {
+            statusEl.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> Server unreachable (timed out after ${HEALTH_CHECK_TIMEOUT_MS / 1000}s)`;
+            statusEl.className = "mode-connection-status error";
+        }
+    }
+}
+
+// Expose mode state for Phase 2+ consumption
+window.getAuraMode = () => auraMode;
+window.getAuraBackendUrl = () => auraBackendUrl;
+
+// ==========================================================================
+// PIPED API ROTATOR & LITE MODE SEARCH / BROWSE ENGINE
+// ==========================================================================
+
+const PIPED_INSTANCES = [
+    "https://pipedapi.kavin.rocks",
+    "https://pipedapi.leptons.xyz",
+    "https://pipedapi.nosebs.ru",
+    "https://pipedapi-libre.kavin.rocks",
+    "https://piped-api.privacy.com.de",
+    "https://pipedapi.adminforge.de",
+    "https://api.piped.yt"
+];
+
+async function fetchFromPiped(endpoint, params = {}, timeoutMs = 6000) {
+    const urlParams = new URLSearchParams(params).toString();
+    const queryPath = urlParams ? `${endpoint}?${urlParams}` : endpoint;
+    
+    let preferredInstance = localStorage.getItem("preferred_piped_instance");
+    let instances = [...PIPED_INSTANCES];
+    if (preferredInstance && instances.includes(preferredInstance)) {
+        instances = [preferredInstance, ...instances.filter(x => x !== preferredInstance)];
+    }
+    
+    for (const instance of instances) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+            const url = `${instance}${queryPath}`;
+            console.log(`Trying Piped API instance: ${url}`);
+            const res = await fetch(url, {
+                signal: controller.signal,
+                headers: { "Accept": "application/json" }
+            });
+            clearTimeout(timeoutId);
+            if (res.ok) {
+                const data = await res.json();
+                localStorage.setItem("preferred_piped_instance", instance);
+                return data;
+            }
+        } catch (e) {
+            clearTimeout(timeoutId);
+            console.warn(`Piped instance ${instance} failed:`, e);
+        }
+    }
+    throw new Error("All Piped API instances failed.");
+}
+
+function mapPipedItem(item) {
+    let videoId = "";
+    if (item.videoId) {
+        videoId = item.videoId;
+    } else if (item.url) {
+        const m = item.url.match(/[?&]v=([^&]+)/);
+        videoId = m ? m[1] : "";
+    }
+    
+    if (!videoId) return null;
+    
+    let durationStr = "3:00";
+    let durationSeconds = parseInt(item.duration) || 180;
+    if (durationSeconds) {
+        const m = Math.floor(durationSeconds / 60);
+        const s = durationSeconds % 60;
+        durationStr = `${m}:${s.toString().padStart(2, "0")}`;
+    }
+    
+    return {
+        id: videoId,
+        title: item.title || "Unknown Title",
+        artist: item.uploaderName || "Unknown Artist",
+        artistId: item.uploaderUrl ? item.uploaderUrl.split("/channel/")[1] || "" : "",
+        album: "YouTube",
+        albumId: "",
+        thumbnail: item.thumbnail || "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?auto=format&fit=crop&w=100&q=80",
+        duration: durationStr,
+        durationSeconds: durationSeconds,
+        type: "song",
+        year: ""
+    };
+}
+
+async function fetchSuggestionsLite(q) {
+    try {
+        const suggestions = await fetchFromPiped("/suggestions", { query: q });
+        renderSuggestionsUI(suggestions);
+    } catch (e) {
+        console.error("Lite suggestions fetch error:", e);
+    }
+}
+
+async function performSearchLite(q, filter, resultsContainer) {
+    let pipedFilter = "all";
+    if (filter) {
+        const f = filter.toLowerCase().trim();
+        if (f === "songs" || f === "song") {
+            pipedFilter = "music_songs";
+        } else if (f === "videos" || f === "video") {
+            pipedFilter = "music_videos";
+        } else if (f === "albums" || f === "album") {
+            pipedFilter = "music_albums";
+        } else if (f === "playlists" || f === "playlist") {
+            pipedFilter = "music_playlists";
+        }
+    }
+    
+    try {
+        const data = await fetchFromPiped("/search", { q: q, filter: pipedFilter });
+        const items = data.items || [];
+        const results = items
+            .map(mapPipedItem)
+            .filter(item => item !== null);
+            
+        searchResultsCache = results;
+        renderSearchResults(results);
+    } catch (err) {
+        console.error("Lite search failed:", err);
+        resultsContainer.innerHTML = `<div class="empty-state"><i class="fa-solid fa-triangle-exclamation"></i><p>Search failed. Check Piped server connection.</p></div>`;
+    }
+}
+
+async function loadHomeDataLite(trendContainer, newContainer, CACHE_DURATION, now) {
+    try {
+        const cachedTrend = localStorage.getItem("aura_home_trending_lite");
+        const cachedNew = localStorage.getItem("aura_home_new_lite");
+        const cachedTime = localStorage.getItem("aura_home_cache_time_lite");
+
+        if (cachedTrend && cachedNew && cachedTime && (now - parseInt(cachedTime)) < CACHE_DURATION) {
+            console.log("Lite home data loaded from cache!");
+            renderHomeCards(JSON.parse(cachedTrend), trendContainer);
+            renderHomeCards(JSON.parse(cachedNew), newContainer);
+            return;
+        }
+
+        const trendDataRaw = await fetchFromPiped("/search", { q: "trending music hits", filter: "music_songs" });
+        const trendData = (trendDataRaw.items || []).map(mapPipedItem).filter(x => x !== null).slice(0, 15);
+
+        localStorage.setItem("aura_home_trending_lite", JSON.stringify(trendData));
+        localStorage.setItem("aura_home_cache_time_lite", now.toString());
+        
+        renderHomeCards(trendData, trendContainer);
+
+        const newDataRaw = await fetchFromPiped("/search", { q: "latest music releases", filter: "music_songs" });
+        const newData = (newDataRaw.items || []).map(mapPipedItem).filter(x => x !== null).slice(0, 15);
+
+        localStorage.setItem("aura_home_new_lite", JSON.stringify(newData));
+
+        renderHomeCards(newData, newContainer);
+        
+    } catch (err) {
+        console.error("Lite home data load error:", err);
+        if (trendContainer) trendContainer.innerHTML = `<div class="empty-state"><p>Failed to load trending. Check connection.</p></div>`;
+        if (newContainer) newContainer.innerHTML = `<div class="empty-state"><p>Failed to load new releases. Check connection.</p></div>`;
+    }
+}
+
+async function loadSyncedLyricsLite(track) {
+    const container = document.getElementById("lyrics-lines-container");
+    container.innerHTML = `<div class="lyrics-loading"><i class="fa-solid fa-spinner fa-spin"></i> Loading lyrics...</div>`;
+    
+    lyricsTimeline = [];
+    currentActiveLyricIndex = -1;
+    
+    try {
+        const cleanTitle = track.title.replace(/\(.*?\)|\[.*?\]/g, "").trim();
+        const cleanArtist = track.artist.replace(/\(.*?\)|\[.*?\]/g, "").trim();
+        let url = `https://lrclib.net/api/lookup?track_name=${encodeURIComponent(cleanTitle)}&artist_name=${encodeURIComponent(cleanArtist)}`;
+        if (track.durationSeconds) {
+            url += `&duration=${track.durationSeconds}`;
+        }
+        
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 4000);
+        
+        const res = await fetch(url, { signal: controller.signal });
+        clearTimeout(timeoutId);
+        
+        if (currentLoadedTrack && currentLoadedTrack.id !== track.id) return;
+        
+        if (res.ok) {
+            const data = await res.json();
+            if (currentLoadedTrack && currentLoadedTrack.id !== track.id) return;
+            
+            if (data.syncedLyrics) {
+                lyricsTimeline = parseLrcLite(data.syncedLyrics);
+                const sourceTag = document.getElementById("lyrics-source-tag");
+                if (sourceTag) sourceTag.innerText = "Source: lrclib (Synced)";
+            } else if (data.plainLyrics) {
+                lyricsTimeline = generateSyntheticSyncLite(data.plainLyrics, track.durationSeconds || 180);
+                const sourceTag = document.getElementById("lyrics-source-tag");
+                if (sourceTag) sourceTag.innerText = "Source: lrclib (Plain, Auto-Synced)";
+            }
+        }
+        
+        if (lyricsTimeline.length === 0) {
+            const placeholder = `[Instrumental Intro]\nPlaying: ${track.title}\nBy: ${track.artist}\nLyrics not found for this track.\n[Instrumental Outro]`;
+            lyricsTimeline = generateSyntheticSyncLite(placeholder, track.durationSeconds || 180);
+            const sourceTag = document.getElementById("lyrics-source-tag");
+            if (sourceTag) sourceTag.innerText = "Source: AURA System (Synthetic)";
+        }
+        
+        renderLyricsUI();
+    } catch (e) {
+        console.error("Lite lyrics fetch failed:", e);
+        const placeholder = `[Instrumental Intro]\nPlaying: ${track.title}\nBy: ${track.artist}\nLyrics not found for this track.\n[Instrumental Outro]`;
+        lyricsTimeline = generateSyntheticSyncLite(placeholder, track.durationSeconds || 180);
+        const sourceTag = document.getElementById("lyrics-source-tag");
+        if (sourceTag) sourceTag.innerText = "Source: AURA System (Synthetic)";
+        renderLyricsUI();
+    }
+}
+
+function parseLrcLite(lrcText) {
+    const lines = lrcText.split("\n");
+    const parsed = [];
+    const timeRegex = /\[(\d+):(\d+)(?:\.(\d+))?\]/g;
+    
+    for (let line of lines) {
+        line = line.trim();
+        if (!line) continue;
+        
+        let match;
+        const matches = [];
+        timeRegex.lastIndex = 0;
+        while ((match = timeRegex.exec(line)) !== null) {
+            matches.push(match);
+        }
+        
+        if (matches.length === 0) continue;
+        
+        const text = line.replace(timeRegex, "").trim();
+        for (const m of matches) {
+            const minutes = parseInt(m[1], 10);
+            const seconds = parseInt(m[2], 10);
+            let milliseconds = 0;
+            if (m[3]) {
+                const msStr = m[3].padEnd(3, "0").slice(0, 3);
+                milliseconds = parseInt(msStr, 10);
+            }
+            const totalSeconds = minutes * 60 + seconds + (milliseconds / 1000.0);
+            parsed.push({ time: totalSeconds, text: text });
+        }
+    }
+    
+    parsed.sort((a, b) => a.time - b.time);
+    return parsed;
+}
+
+function generateSyntheticSyncLite(plainText, durationSec) {
+    const lines = plainText.split("\n").map(l => l.trim()).filter(l => l);
+    if (lines.length === 0) return [];
+    
+    const duration = durationSec > 0 ? durationSec : 180;
+    const interval = duration / Math.max(lines.length + 1, 1);
+    
+    return lines.map((line, idx) => ({
+        time: parseFloat(((idx + 1) * interval).toFixed(2)),
+        text: line
+    }));
+}

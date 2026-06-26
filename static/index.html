@@ -59,6 +59,10 @@
                 </button>
             </nav>
             <div class="sidebar-footer">
+                <button id="mode-toggle-btn" class="mode-status-btn">
+                    <span class="mode-dot lite"></span>
+                    <span class="mode-label">Lite Mode</span>
+                </button>
                 <button id="theme-toggle-btn"><i class="fa-solid fa-palette"></i> Theme</button>
             </div>
         </aside>
@@ -978,7 +982,54 @@
         </div>
     </div>
 
+    <!-- Mode Selection Dropdown -->
+    <div id="mode-dropdown-overlay" class="mode-dropdown-overlay hide">
+        <div id="mode-dropdown" class="mode-dropdown glass-panel">
+            <div class="mode-dropdown-header">
+                <h4>Connection Mode</h4>
+                <button id="close-mode-dropdown-btn" class="icon-btn"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="mode-dropdown-body">
+                <button class="mode-option" data-mode="lite" id="mode-opt-lite">
+                    <span class="mode-dot lite"></span>
+                    <div class="mode-option-info">
+                        <strong>Lite Mode</strong>
+                        <small>No server needed — browse & play local/downloaded files</small>
+                    </div>
+                </button>
+                <button class="mode-option" data-mode="pro" id="mode-opt-pro">
+                    <span class="mode-dot pro"></span>
+                    <div class="mode-option-info">
+                        <strong>Pro Mode</strong>
+                        <small>Full features — stream, AI DJ, Jam, EQ</small>
+                    </div>
+                </button>
+                <!-- URL input (shown when Pro selected with no saved URL) -->
+                <div id="mode-url-section" class="hide">
+                    <label>Backend Server URL</label>
+                    <div class="mode-url-input-row">
+                        <input type="url" id="backend-url-input" placeholder="https://your-tunnel.trycloudflare.com" autocomplete="off">
+                        <button class="btn btn-gold btn-sm" id="connect-backend-btn"><i class="fa-solid fa-plug"></i> Connect</button>
+                    </div>
+                    <div id="mode-connection-status" class="mode-connection-status"></div>
+                </div>
+                <!-- Shown when URL is saved -->
+                <div id="mode-connected-section" class="hide">
+                    <div class="mode-connected-info">
+                        <span class="mode-dot" id="mode-connected-dot"></span>
+                        <span id="mode-connected-url">Connected to: ...</span>
+                    </div>
+                    <div class="mode-connected-actions">
+                        <button class="text-btn" id="change-backend-url-btn"><i class="fa-solid fa-pen"></i> Change Link</button>
+                        <button class="text-btn danger" id="disconnect-backend-btn"><i class="fa-solid fa-link-slash"></i> Disconnect</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Script imports -->
+
      
 
     <script src="js/equalizer.js"></script>
