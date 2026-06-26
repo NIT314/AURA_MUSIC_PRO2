@@ -492,11 +492,15 @@ function initTabNavigation() {
     const tabPanels = document.querySelectorAll(".tab-panel");
 
     // Connect both desktop sidebar buttons and mobile tab bar buttons (we will create mobile tabs dynamically)
-    function switchTab(tabId) {
-        if (auraMode === "lite" && (tabId === "jam" || tabId === "equalizer")) {
-            showToast(`${tabId === "jam" ? "AURA JAM" : "Equalizer"} is only available in Pro Mode.`);
-            return;
-        }
+function switchTab(tabId) {
+         if (auraMode === "lite" && tabId === "jam") {
+             showToast(`AURA JAM is only available in Pro Mode.`);
+             return;
+         }
+         if (currentLoadedTrack && currentLoadedTrack.isLocal !== true && tabId === "equalizer") {
+             showToast(`Equalizer is only available for local files in Lite Mode.`);
+             return;
+         }
         const fullPlayer = document.getElementById("full-player");
         if (fullPlayer && fullPlayer.classList.contains("player-open")) {
             fullPlayer.classList.remove("player-open");
