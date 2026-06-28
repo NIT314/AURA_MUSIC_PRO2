@@ -2654,26 +2654,45 @@ class JamPreloader {
         if (this.runId !== runId) return;
 
         // 3. Fetch stream URL silently
-        try {
+        const attemptLoad = async () => {
             const res = await fetch(streamUrl);
-            if (res.ok) {
-                if (this.runId !== runId) return;
-                await cache.put(streamUrl, res);
-                
-                // Add to downloadedSongs so it's recognized as offline
-                if (!downloadedSongs.some(s => s.id === track.id)) {
-                    const taggedTrack = { ...track, _src: "jam" };
-                    downloadedSongs.push(taggedTrack);
-                    saveStateToStorage("aura_downloads", downloadedSongs);
-                }
-                updateDownloadAccessTime(track.id);
+            if (!res.ok) throw new Error(`HTTP status: ${res.status}`);
+            if (this.runId !== runId) return;
+            await cache.put(streamUrl, res);
+            
+            // Add to downloadedSongs so it's recognized as offline
+            if (!downloadedSongs.some(s => s.id === track.id)) {
+                const taggedTrack = { ...track, _src: "jam" };
+                downloadedSongs.push(taggedTrack);
+                saveStateToStorage("aura_downloads", downloadedSongs);
             }
+            updateDownloadAccessTime(track.id);
+        };
+
+        try {
+            await attemptLoad();
         } catch (e) {
             if (e.name === 'QuotaExceededError') {
                 console.warn("Storage quota exceeded on preload, running urgent eviction.");
                 await this.checkStorageAndEvict(true);
-            } else {
-                throw e;
+                return;
+            }
+            
+            // Wait 1.5 seconds and retry once more
+            if (this.runId !== runId) return;
+            await new Promise(resolve => setTimeout(resolve, 1500));
+            if (this.runId !== runId) return;
+            console.log(`[JAM-DEBUG] Retry preload for ${track.id}`);
+            
+            try {
+                await attemptLoad();
+            } catch (retryErr) {
+                if (retryErr.name === 'QuotaExceededError') {
+                    console.warn("Storage quota exceeded on preload retry, running urgent eviction.");
+                    await this.checkStorageAndEvict(true);
+                } else {
+                    console.error("Preload retry failed:", retryErr);
+                }
             }
         }
     }
