@@ -510,7 +510,7 @@ function switchTab(tabId) {
              showToast(`AURA JAM is only available in Pro Mode.`);
              return;
          }
-         if (currentLoadedTrack && currentLoadedTrack.isLocal !== true && tabId === "equalizer") {
+         if (auraMode === "lite" && currentLoadedTrack && currentLoadedTrack.isLocal !== true && tabId === "equalizer") {
              showToast(`Equalizer is only available for local files in Lite Mode.`);
              return;
          }
