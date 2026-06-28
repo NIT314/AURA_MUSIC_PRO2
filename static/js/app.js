@@ -4926,6 +4926,7 @@ window.unhideTrack = (trackId) => {
 
 const HEALTH_CHECK_TIMEOUT_MS = 3500;
 const HEALTH_CHECK_INTERVAL_MS = 45000;
+let hasShownOfflineToast = false;
 
 async function initModeSystem() {
     // Inject mode dot into header (visible on both desktop + mobile)
@@ -4943,6 +4944,13 @@ async function initModeSystem() {
     // Desktop sidebar button
     const sidebarBtn = document.getElementById("mode-toggle-btn");
     if (sidebarBtn) sidebarBtn.addEventListener("click", openModeDropdown);
+
+    // Manual Retry connection buttons
+    document.getElementById("mode-retry-btn")?.addEventListener("click", (e) => {
+        e.stopPropagation();
+        handleManualRetry();
+    });
+    document.getElementById("mode-dropdown-retry-btn")?.addEventListener("click", handleManualRetry);
 
     // Dropdown close handlers
     const closeBtn = document.getElementById("close-mode-dropdown-btn");
@@ -5001,7 +5009,12 @@ async function initModeSystem() {
             const isAlive = await checkBackendHealth();
             setMode(isAlive ? "pro" : "lite");
             if (!isAlive) {
-                showToast("Server offline, Lite Mode mein chal rahe ho.");
+                if (!hasShownOfflineToast) {
+                    showToast("Server offline, Lite Mode mein chal rahe ho.");
+                    hasShownOfflineToast = true;
+                }
+            } else {
+                hasShownOfflineToast = false;
             }
         } else {
             setMode("lite");
@@ -5032,6 +5045,42 @@ async function checkBackendHealth() {
     } catch {
         clearTimeout(timeoutId);
         return false;
+    }
+}
+
+async function handleManualRetry() {
+    if (!auraBackendUrl) {
+        showToast("No server URL configured.");
+        return;
+    }
+    
+    const retryBtns = [
+        document.getElementById("mode-retry-btn"),
+        document.getElementById("mode-dropdown-retry-btn")
+    ];
+    retryBtns.forEach(btn => {
+        if (btn) {
+            btn.disabled = true;
+            const icon = btn.querySelector("i");
+            if (icon) icon.classList.add("fa-spin");
+        }
+    });
+    
+    const isAlive = await checkBackendHealth();
+    
+    retryBtns.forEach(btn => {
+        if (btn) {
+            btn.disabled = false;
+            const icon = btn.querySelector("i");
+            if (icon) icon.classList.remove("fa-spin");
+        }
+    });
+    
+    if (isAlive) {
+        setMode("pro");
+        hasShownOfflineToast = false;
+    } else {
+        showToast("Server still unreachable");
     }
 }
 
@@ -5080,10 +5129,16 @@ function _startHealthCheckLoop() {
         const isAlive = await checkBackendHealth();
         if (auraMode === "pro" && !isAlive) {
             setMode("lite");
-            showToast("Server offline, Lite Mode mein chal rahe ho.");
-        } else if (auraMode === "lite" && isAlive) {
-            setMode("pro");
-            showToast("Server reconnected, Pro Mode ⚡");
+            if (!hasShownOfflineToast) {
+                showToast("Server offline, Lite Mode mein chal rahe ho.");
+                hasShownOfflineToast = true;
+            }
+        } else if (isAlive) {
+            hasShownOfflineToast = false;
+            if (auraMode === "lite") {
+                setMode("pro");
+                showToast("Server reconnected, Pro Mode ⚡");
+            }
         }
     }, HEALTH_CHECK_INTERVAL_MS);
 }

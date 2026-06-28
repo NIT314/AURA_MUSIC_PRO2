@@ -3718,3 +3718,23 @@ input:checked + .slider-round:before {
     gap: 12px;
     margin-top: 8px;
 }
+
+/* Mode Retry Button */
+.mode-retry-btn {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border-glass);
+    border-radius: 12px;
+    height: 38px;
+    width: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: var(--text-primary);
+    transition: var(--transition-smooth);
+}
+.mode-retry-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--accent-gold);
+    transform: rotate(30deg);
+}

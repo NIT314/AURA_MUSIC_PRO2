@@ -59,10 +59,15 @@
                 </button>
             </nav>
             <div class="sidebar-footer">
-                <button id="mode-toggle-btn" class="mode-status-btn">
-                    <span class="mode-dot lite"></span>
-                    <span class="mode-label">Lite Mode</span>
-                </button>
+                <div class="mode-status-container" style="display: flex; align-items: center; gap: 8px; width: 100%; margin-bottom: 8px;">
+                    <button id="mode-toggle-btn" class="mode-status-btn" style="flex: 1; margin-bottom: 0;">
+                        <span class="mode-dot lite"></span>
+                        <span class="mode-label">Lite Mode</span>
+                    </button>
+                    <button id="mode-retry-btn" class="mode-retry-btn" title="Retry Connection">
+                        <i class="fa-solid fa-arrows-rotate"></i>
+                    </button>
+                </div>
                 <button id="theme-toggle-btn"><i class="fa-solid fa-palette"></i> Theme</button>
             </div>
         </aside>
@@ -1015,9 +1020,14 @@
                 </div>
                 <!-- Shown when URL is saved -->
                 <div id="mode-connected-section" class="hide">
-                    <div class="mode-connected-info">
-                        <span class="mode-dot" id="mode-connected-dot"></span>
-                        <span id="mode-connected-url">Connected to: ...</span>
+                    <div class="mode-connected-info" style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+                        <div style="display: flex; align-items: center; gap: 8px; word-break: break-all; flex: 1;">
+                            <span class="mode-dot" id="mode-connected-dot"></span>
+                            <span id="mode-connected-url">Connected to: ...</span>
+                        </div>
+                        <button id="mode-dropdown-retry-btn" class="text-btn" title="Retry Connection" style="padding: 4px 8px; font-size: 12px; border-radius: 6px; background: rgba(255,255,255,0.05); cursor: pointer; display: flex; align-items: center; gap: 4px; border: 1px solid var(--border-glass); color: var(--text-primary); transition: var(--transition-smooth);">
+                            <i class="fa-solid fa-arrows-rotate"></i> Retry
+                        </button>
                     </div>
                     <div class="mode-connected-actions">
                         <button class="text-btn" id="change-backend-url-btn"><i class="fa-solid fa-pen"></i> Change Link</button>
