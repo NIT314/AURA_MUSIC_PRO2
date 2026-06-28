@@ -46,6 +46,7 @@ let clockOffset = 0;
 let clockSyncInProgress = false;
 let clockSyncInterval = null;
 let hostHeartbeatInterval = null;
+let lastSeekTime = 0;
 let clockSynced = false;
 let bufferedInitialState = null;
 
@@ -192,6 +193,7 @@ function exitJamUI() {
     if (window.jamPreloader) {
         window.jamPreloader.stop();
     }
+    lastSeekTime = 0;
     clearTimeout(jamReconnectTimer);
     clearInterval(clockSyncInterval);
     clockSyncInterval = null;
@@ -859,10 +861,16 @@ function syncLocalPlayback(data) {
             
             // if Math.abs(drift) > 2000ms (2.0s) -> hard seek only, else do nothing
             if (absDrift > 2.0) {
-                console.log(`Playback drift detected (${Math.round(drift * 1000)}ms). Hard seeking to ${compensatedTarget.toFixed(3)}s`);
-                audio.currentTime = compensatedTarget;
-                if (nativePlay && auraPlugin) {
-                    auraPlugin.seek({ position: compensatedTarget }).catch(e => console.error("Native sync seek failed:", e));
+                const nowMs = Date.now();
+                if (nowMs - lastSeekTime < 6000) {
+                    console.log(`[JAM-DEBUG] Seek cooldown active, skipping when a seek is suppressed due to cooldown. Current drift: ${Math.round(drift * 1000)}ms`);
+                } else {
+                    console.log(`Playback drift detected (${Math.round(drift * 1000)}ms). Hard seeking to ${compensatedTarget.toFixed(3)}s`);
+                    lastSeekTime = nowMs;
+                    audio.currentTime = compensatedTarget;
+                    if (nativePlay && auraPlugin) {
+                        auraPlugin.seek({ position: compensatedTarget }).catch(e => console.error("Native sync seek failed:", e));
+                    }
                 }
             }
         }
