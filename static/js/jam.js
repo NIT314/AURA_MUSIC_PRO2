@@ -395,15 +395,31 @@ function handleJamWSMessage(data) {
         }
     } 
     else if (type === "playback_sync") {
-        console.log('[JAM DEBUG 1] playback_update received:', data);
-        console.log('[JAM DEBUG 2] isHost:', currentUserRole, 'isInsideJam:', window.isInsideJam());
         // If I am the sender, ignore. Or if I am the Host (Host is source of truth, doesn't sync from others)
         if ((data.sender && data.sender.toLowerCase() === currentUsername.toLowerCase()) || currentUserRole === "host") {
             return;
         }
         
-        console.log('[JAM DEBUG 3] calling playSongById with:', data.track);
-        syncLocalPlayback(data);
+        const currentSong = window.currentLoadedTrack;
+        const currentId = currentSong ? currentSong.id : null;
+        
+        // Guard: Only reload track if target video_id is different
+        if (data.video_id && currentId !== data.video_id) {
+            if (window.playSongById) {
+                const now = Date.now();
+                const rawDelay = Math.max(0, (now + clockOffset) - data.server_time) / 1000.0;
+                transmissionJitterBuffer.add(rawDelay);
+                const transmissionDelay = transmissionJitterBuffer.getMedian();
+                let compensatedTarget = parseFloat(data.position);
+                if (data.state === "PLAYING") {
+                    compensatedTarget += transmissionDelay;
+                }
+                window.playSongById(data.video_id, data.track, compensatedTarget, data.state === "PLAYING");
+            }
+        } else {
+            // Same song: skip playSongById, only call syncLocalPlayback to align position/drift
+            syncLocalPlayback(data);
+        }
     } 
     else if (type === "error") {
         showToast(data.reason || "An error occurred.");
