@@ -2537,7 +2537,8 @@ async function downloadTrackFromRow(event, trackId) {
             speedText.innerText = "Completed";
             
             // Add song to local meta lists
-            downloadedSongs.push(track);
+            const taggedTrack = { ...track, _src: "manual" };
+            downloadedSongs.push(taggedTrack);
             saveStateToStorage("aura_downloads", downloadedSongs);
             
             showToast(`Downloaded: ${track.title} 📶`);
@@ -2661,11 +2662,9 @@ class JamPreloader {
                 
                 // Add to downloadedSongs so it's recognized as offline
                 if (!downloadedSongs.some(s => s.id === track.id)) {
-                    downloadedSongs.push(track);
+                    const taggedTrack = { ...track, _src: "jam" };
+                    downloadedSongs.push(taggedTrack);
                     saveStateToStorage("aura_downloads", downloadedSongs);
-                    if (window.renderLibraryDownloads) {
-                        window.renderLibraryDownloads();
-                    }
                 }
                 updateDownloadAccessTime(track.id);
             }
@@ -2706,8 +2705,8 @@ class JamPreloader {
         // Collect IDs currently in the Jam queue
         const activeIds = this.activeQueue.map(item => item.id);
         
-        // Non-queue downloaded songs
-        const candidates = downloadedSongs.filter(track => !activeIds.includes(track.id));
+        // Non-queue downloaded songs with "jam" source
+        const candidates = downloadedSongs.filter(track => track._src === "jam" && !activeIds.includes(track.id));
         if (candidates.length === 0) return false;
 
         // Retrieve access timestamps
@@ -2734,9 +2733,6 @@ class JamPreloader {
         // Remove from downloadedSongs meta list
         downloadedSongs = downloadedSongs.filter(s => s.id !== target.id);
         saveStateToStorage("aura_downloads", downloadedSongs);
-        if (window.renderLibraryDownloads) {
-            window.renderLibraryDownloads();
-        }
 
         // Clean up access time registry
         delete times[target.id];
