@@ -1342,6 +1342,7 @@ function onSongPlayStateChange(isPlaying) {
 window.playSingleSong = playSingleSong;
 async function playSingleSong(track, autoplay = true, fromJamSync = false, keepInfiniteQueue = false) {
     if (!track) return;
+    console.log('[JAM DEBUG 4] playSingleSong called, auraMode:', auraMode, 'isInsideJam:', window.isInsideJam());
 
     if (!keepInfiniteQueue) {
         infiniteQueue = [];
@@ -1602,6 +1603,7 @@ async function playSingleSong(track, autoplay = true, fromJamSync = false, keepI
                                     ? auraBackendUrl 
                                     : window.location.origin; // Fallback to page origin for Jam listeners
                     audio.src = `${baseUrl}/api/stream?video_id=${track.id}`;
+                    console.log('[JAM DEBUG 5] audio.src set to:', audio.src);
                 }
             }
         }

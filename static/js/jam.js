@@ -395,11 +395,14 @@ function handleJamWSMessage(data) {
         }
     } 
     else if (type === "playback_sync") {
+        console.log('[JAM DEBUG 1] playback_update received:', data);
+        console.log('[JAM DEBUG 2] isHost:', currentUserRole, 'isInsideJam:', window.isInsideJam());
         // If I am the sender, ignore. Or if I am the Host (Host is source of truth, doesn't sync from others)
         if ((data.sender && data.sender.toLowerCase() === currentUsername.toLowerCase()) || currentUserRole === "host") {
             return;
         }
         
+        console.log('[JAM DEBUG 3] calling playSongById with:', data.track);
         syncLocalPlayback(data);
     } 
     else if (type === "error") {
