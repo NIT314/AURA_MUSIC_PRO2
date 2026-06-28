@@ -491,26 +491,55 @@ function updateJamRoomUI(state, serverTime = null) {
     if (draggingElement) {
         console.log("Drag in progress, skipping queue render to prevent interruption.");
     } else {
-        queueContainer.innerHTML = "";
-        
         if (state.queue.length === 0) {
             queueContainer.innerHTML = `<div class="empty-queue-msg">Queue is empty. Find songs in Search!</div>`;
         } else {
+            // Remove empty queue message if present
+            const emptyMsg = queueContainer.querySelector(".empty-queue-msg");
+            if (emptyMsg) emptyMsg.remove();
+
             const canControl = currentUserRole === "host" || currentUserRole === "co-host";
             const isActiveTrack = (item) => {
                 return state.playback.current_track && state.playback.current_track.id === item.id;
             };
 
+            // Map current DOM elements by ID
+            const currentDOMMap = {};
+            const existingRows = Array.from(queueContainer.children).filter(child => child.classList.contains("track-row"));
+            existingRows.forEach(child => {
+                const id = child.getAttribute("data-id");
+                if (id) currentDOMMap[id] = child;
+            });
+
+            // Target list of IDs in new order
+            const targetIds = state.queue.map(item => item.id);
+
+            // 1. Remove elements that are no longer in the queue
+            existingRows.forEach(child => {
+                const id = child.getAttribute("data-id");
+                if (id && !targetIds.includes(id)) {
+                    child.remove();
+                }
+            });
+
+            // 2. Insert, reorder and update elements in place
             state.queue.forEach((item, idx) => {
-                const row = document.createElement("div");
                 const active = isActiveTrack(item);
+                let row = currentDOMMap[item.id];
+                const isNew = !row;
+
+                if (isNew) {
+                    row = document.createElement("div");
+                    row.setAttribute("data-id", item.id);
+                }
+
+                // Update classes dynamically in place
                 row.className = `track-row ${active ? 'active-track' : ''}`;
-                
+
                 let dragHandleHTML = "";
                 let menuBtnHTML = "";
                 
                 if (canControl) {
-                    row.setAttribute('data-id', item.id);
                     dragHandleHTML = `
                         <button class="track-drag-handle" onclick="event.stopPropagation();" title="Drag to reorder">
                             <i class="fa-solid fa-grip-lines"></i>
@@ -523,37 +552,7 @@ function updateJamRoomUI(state, serverTime = null) {
                     `;
                 }
 
-                row.onclick = (event) => {
-                    if (event.target.closest("button")) return;
-                    
-                    const role = window.getJamRole ? window.getJamRole() : 'listener';
-                    if (role !== 'host' && role !== 'co-host') {
-                        showToast("🎵 Only Host or Co-Host can change songs in Jam");
-                        return;
-                    }
-                    
-                    // Directly play and sync the song!
-                    if (window.playSingleSong) {
-                        window.playSingleSong(item);
-                    } else if (typeof playSingleSong !== 'undefined') {
-                        playSingleSong(item);
-                    }
-                    
-                    if (window.isInsideJam && window.isInsideJam()) {
-                        if (window.sendJamPlaybackUpdate) {
-                            setTimeout(() => {
-                                window.sendJamPlaybackUpdate(
-                                    item.id,
-                                    "PLAYING",
-                                    0,
-                                    item
-                                );
-                            }, 800);
-                        }
-                    }
-                };
-
-                row.innerHTML = `
+                const expectedHTML = `
                     <div class="track-row-art"><img src="${item.thumbnail || 'https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?auto=format&fit=crop&w=100&q=80'}"></div>
                     <div class="track-row-info">
                         <h4 style="${active ? 'color: var(--gold);' : ''}">${escapeHTML(item.title)}</h4>
@@ -565,133 +564,171 @@ function updateJamRoomUI(state, serverTime = null) {
                         ${dragHandleHTML}
                     </div>
                 `;
-                queueContainer.appendChild(row);
-            });
-
-            // Bind Pointer Events for Drag-and-Drop
-            if (canControl) {
-                state.queue.forEach((item, idx) => {
-                    const row = queueContainer.children[idx];
-                    if (!row) return;
+                
+                if (isNew || row.getAttribute("data-title") !== item.title || row.getAttribute("data-active") !== String(active)) {
+                    row.innerHTML = expectedHTML;
+                    row.setAttribute("data-title", item.title);
+                    row.setAttribute("data-active", String(active));
                     
-                    const dragHandle = row.querySelector('.track-drag-handle');
-                    if (dragHandle) {
-                        dragHandle.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
+                    row.onclick = (event) => {
+                        if (event.target.closest("button")) return;
                         
-                        dragHandle.addEventListener('pointerdown', (e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            
-                            const activeRow = row;
-                            const activeIndex = Array.from(queueContainer.querySelectorAll('.track-row')).indexOf(activeRow);
-                            if (activeIndex === -1) return;
-                            
-                            dragHandle.setPointerCapture(e.pointerId);
-                            draggingElement = activeRow;
-                            
-                            let startY = e.clientY;
-                            let isDragging = false;
-                            let hoverIndex = activeIndex;
-                            
-                            const rows = Array.from(queueContainer.querySelectorAll('.track-row'));
-                            const rowHeight = activeRow.offsetHeight;
-                            const gap = 8;
-                            const shiftDistance = rowHeight + gap;
-                            
-                            const rowMidpoints = rows.map(r => {
-                                const rect = r.getBoundingClientRect();
-                                return rect.top + rect.height / 2;
-                            });
-                            
-                            const onPointerMove = (moveEvent) => {
-                                const deltaY = moveEvent.clientY - startY;
+                        const role = window.getJamRole ? window.getJamRole() : 'listener';
+                        if (role !== 'host' && role !== 'co-host') {
+                            showToast("🎵 Only Host or Co-Host can change songs in Jam");
+                            return;
+                        }
+                        
+                        if (window.playSingleSong) {
+                            window.playSingleSong(item);
+                        } else if (typeof playSingleSong !== 'undefined') {
+                            playSingleSong(item);
+                        }
+                        
+                        if (window.isInsideJam && window.isInsideJam()) {
+                            if (window.sendJamPlaybackUpdate) {
+                                setTimeout(() => {
+                                    window.sendJamPlaybackUpdate(
+                                        item.id,
+                                        "PLAYING",
+                                        0,
+                                        item
+                                    );
+                                }, 800);
+                            }
+                        }
+                    };
+                    
+                    // Bind touch and pointer drag events if user has control permission
+                    if (canControl) {
+                        const dragHandle = row.querySelector('.track-drag-handle');
+                        if (dragHandle) {
+                            dragHandle.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
+                            dragHandle.addEventListener('pointerdown', (e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
                                 
-                                if (!isDragging) {
-                                    if (Math.abs(deltaY) > 8) {
-                                        isDragging = true;
-                                        queueContainer.classList.add("queue-dragging-active");
-                                        activeRow.classList.add("row-dragging");
-                                    }
-                                }
+                                const activeRow = row;
+                                const activeIndex = Array.from(queueContainer.querySelectorAll('.track-row')).indexOf(activeRow);
+                                if (activeIndex === -1) return;
                                 
-                                if (isDragging) {
-                                    activeRow.style.transform = `translateY(${deltaY}px)`;
+                                dragHandle.setPointerCapture(e.pointerId);
+                                draggingElement = activeRow;
+                                
+                                let startY = e.clientY;
+                                let isDragging = false;
+                                let hoverIndex = activeIndex;
+                                
+                                const rows = Array.from(queueContainer.querySelectorAll('.track-row'));
+                                const rowHeight = activeRow.offsetHeight;
+                                const gap = 8;
+                                const shiftDistance = rowHeight + gap;
+                                
+                                const rowMidpoints = rows.map(r => {
+                                    const rect = r.getBoundingClientRect();
+                                    return rect.top + rect.height / 2;
+                                });
+                                
+                                const onPointerMove = (moveEvent) => {
+                                    const deltaY = moveEvent.clientY - startY;
                                     
-                                    const currentMidpoint = rowMidpoints[activeIndex] + deltaY;
-                                    let newHoverIndex = activeIndex;
-                                    
-                                    for (let i = 0; i < rows.length; i++) {
-                                        if (i === activeIndex) continue;
-                                        const siblingMidpoint = rowMidpoints[i];
-                                        if (deltaY > 0) {
-                                            if (i > activeIndex && currentMidpoint > siblingMidpoint) {
-                                                newHoverIndex = Math.max(newHoverIndex, i);
-                                            }
-                                        } else if (deltaY < 0) {
-                                            if (i < activeIndex && currentMidpoint < siblingMidpoint) {
-                                                newHoverIndex = Math.min(newHoverIndex, i);
-                                            }
+                                    if (!isDragging) {
+                                        if (Math.abs(deltaY) > 8) {
+                                            isDragging = true;
+                                            queueContainer.classList.add("queue-dragging-active");
+                                            activeRow.classList.add("row-dragging");
                                         }
                                     }
                                     
-                                    if (newHoverIndex !== hoverIndex) {
-                                        hoverIndex = newHoverIndex;
+                                    if (isDragging) {
+                                        activeRow.style.transform = `translateY(${deltaY}px)`;
                                         
-                                        rows.forEach((sibling, i) => {
-                                            if (i === activeIndex) return;
+                                        const currentMidpoint = rowMidpoints[activeIndex] + deltaY;
+                                        let newHoverIndex = activeIndex;
+                                        
+                                        for (let i = 0; i < rows.length; i++) {
+                                            if (i === activeIndex) continue;
+                                            const siblingMidpoint = rowMidpoints[i];
+                                            if (deltaY > 0) {
+                                                if (i > activeIndex && currentMidpoint > siblingMidpoint) {
+                                                    newHoverIndex = Math.max(newHoverIndex, i);
+                                                }
+                                            } else if (deltaY < 0) {
+                                                if (i < activeIndex && currentMidpoint < siblingMidpoint) {
+                                                    newHoverIndex = Math.min(newHoverIndex, i);
+                                                }
+                                            }
+                                        }
+                                        
+                                        if (newHoverIndex !== hoverIndex) {
+                                            hoverIndex = newHoverIndex;
                                             
-                                            let translation = 0;
-                                            if (activeIndex < hoverIndex) {
-                                                if (i > activeIndex && i <= hoverIndex) {
-                                                    translation = -shiftDistance;
+                                            rows.forEach((sibling, i) => {
+                                                if (i === activeIndex) return;
+                                                
+                                                let translation = 0;
+                                                if (activeIndex < hoverIndex) {
+                                                    if (i > activeIndex && i <= hoverIndex) {
+                                                        translation = -shiftDistance;
+                                                    }
+                                                } else if (activeIndex > hoverIndex) {
+                                                    if (i < activeIndex && i >= hoverIndex) {
+                                                        translation = shiftDistance;
+                                                    }
                                                 }
-                                            } else if (activeIndex > hoverIndex) {
-                                                if (i < activeIndex && i >= hoverIndex) {
-                                                    translation = shiftDistance;
-                                                }
-                                            }
-                                            sibling.style.transform = translation ? `translateY(${translation}px)` : '';
-                                        });
-                                    }
-                                }
-                            };
-                            
-                            const onPointerUp = (upEvent) => {
-                                try {
-                                    dragHandle.releasePointerCapture(upEvent.pointerId);
-                                } catch (err) {}
-                                
-                                dragHandle.removeEventListener('pointermove', onPointerMove);
-                                dragHandle.removeEventListener('pointerup', onPointerUp);
-                                dragHandle.removeEventListener('pointercancel', onPointerUp);
-                                
-                                if (isDragging) {
-                                    queueContainer.classList.remove("queue-dragging-active");
-                                    activeRow.classList.remove("row-dragging");
-                                    
-                                    rows.forEach(r => r.style.transform = '');
-                                    draggingElement = null;
-                                    
-                                    if (hoverIndex !== activeIndex) {
-                                        const newRows = [...rows];
-                                        const [removed] = newRows.splice(activeIndex, 1);
-                                        newRows.splice(hoverIndex, 0, removed);
-                                        
-                                        const newIds = newRows.map(r => r.getAttribute('data-id'));
-                                        if (window.sendJamReorderQueue) {
-                                            window.sendJamReorderQueue(newIds);
+                                                sibling.style.transform = translation ? `translateY(${translation}px)` : '';
+                                            });
                                         }
                                     }
-                                }
-                            };
-                            
-                            dragHandle.addEventListener('pointermove', onPointerMove);
-                            dragHandle.addEventListener('pointerup', onPointerUp);
-                            dragHandle.addEventListener('pointercancel', onPointerUp);
-                        });
+                                };
+                                
+                                const onPointerUp = (upEvent) => {
+                                    try {
+                                        dragHandle.releasePointerCapture(upEvent.pointerId);
+                                    } catch (err) {}
+                                    
+                                    dragHandle.removeEventListener('pointermove', onPointerMove);
+                                    dragHandle.removeEventListener('pointerup', onPointerUp);
+                                    dragHandle.removeEventListener('pointercancel', onPointerUp);
+                                    
+                                    if (isDragging) {
+                                        queueContainer.classList.remove("queue-dragging-active");
+                                        activeRow.classList.remove("row-dragging");
+                                        
+                                        rows.forEach(r => r.style.transform = '');
+                                        draggingElement = null;
+                                        
+                                        if (hoverIndex !== activeIndex) {
+                                            const newRows = [...rows];
+                                            const [removed] = newRows.splice(activeIndex, 1);
+                                            newRows.splice(hoverIndex, 0, removed);
+                                            
+                                            const newIds = newRows.map(r => r.getAttribute('data-id'));
+                                            if (window.sendJamReorderQueue) {
+                                                window.sendJamReorderQueue(newIds);
+                                            }
+                                        }
+                                    }
+                                };
+                                
+                                dragHandle.addEventListener('pointermove', onPointerMove);
+                                dragHandle.addEventListener('pointerup', onPointerUp);
+                                dragHandle.addEventListener('pointercancel', onPointerUp);
+                            });
+                        }
                     }
-                });
-            }
+                }
+
+                // Place/Move row in DOM at the correct index
+                const currentChildren = Array.from(queueContainer.children);
+                if (currentChildren[idx] !== row) {
+                    if (idx >= currentChildren.length) {
+                        queueContainer.appendChild(row);
+                    } else {
+                        queueContainer.insertBefore(row, currentChildren[idx]);
+                    }
+                }
+            });
         }
     }
 
