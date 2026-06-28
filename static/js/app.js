@@ -70,7 +70,6 @@ let shuffledQueueOrder = null; // array of indices, when shuffle is active
 // Lite/Pro Mode state
 let auraMode = "lite";           // "pro" | "lite"
 let auraBackendUrl = "";         // user-supplied backend URL
-let healthCheckIntervalId = null;
 
 // Native Capacitor state
 let isPlayingNative = false;
@@ -93,6 +92,11 @@ if (audio) {
     audio.preservesPitch = true;
     audio.mozPreservesPitch = true;
     audio.webkitPreservesPitch = true;
+    audio.addEventListener("error", (e) => {
+        if (auraMode === "pro" && window.currentLoadedTrack && window.currentLoadedTrack.isLocal !== true) {
+            showToast("Server unreachable");
+        }
+    });
 }
 const toast = document.getElementById("toast-notification");
 
@@ -5055,16 +5059,54 @@ async function initModeSystem() {
 
     // Option click handlers
     document.getElementById("mode-opt-lite")?.addEventListener("click", () => {
-        // Lite selection — don't clear URL, just switch view focus
+        if (auraMode === "lite") {
+            closeModeDropdown();
+            return;
+        }
+        
+        // Manual switch Pro -> Lite: block if inside Jam session
+        if (window.isInsideJam && window.isInsideJam()) {
+            showToast("Leave Jam before switching modes");
+            return;
+        }
+        
+        setMode("lite");
         closeModeDropdown();
+        showToast("Disconnected — Lite Mode active");
     });
 
-    document.getElementById("mode-opt-pro")?.addEventListener("click", () => {
+    document.getElementById("mode-opt-pro")?.addEventListener("click", async () => {
+        if (auraMode === "pro") {
+            closeModeDropdown();
+            return;
+        }
+        
         if (auraBackendUrl) {
-            // URL exists — show connection status section
+            const statusEl = document.getElementById("mode-connection-status");
             _showConnectedSection();
+            if (statusEl) {
+                statusEl.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin"></i> Checking connection...`;
+                statusEl.className = "mode-connection-status checking";
+            }
+            
+            const isAlive = await checkBackendHealth();
+            if (isAlive) {
+                setMode("pro");
+                if (statusEl) {
+                    statusEl.innerHTML = `<i class="fa-solid fa-check-circle"></i> Connected!`;
+                    statusEl.className = "mode-connection-status success";
+                }
+                showToast("Pro Mode activated ⚡");
+                setTimeout(closeModeDropdown, 800);
+            } else {
+                setMode("lite");
+                if (statusEl) {
+                    statusEl.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> Server unreachable`;
+                    statusEl.className = "mode-connection-status error";
+                }
+                showToast("Server unreachable, staying in Lite");
+            }
         } else {
-            // No URL — show input
             _showUrlInputSection();
         }
     });
@@ -5100,7 +5142,7 @@ async function initModeSystem() {
             setMode(isAlive ? "pro" : "lite");
             if (!isAlive) {
                 if (!hasShownOfflineToast) {
-                    showToast("Server offline, Lite Mode mein chal rahe ho.");
+                    showToast("Server offline, starting in Lite Mode");
                     hasShownOfflineToast = true;
                 }
             } else {
@@ -5113,9 +5155,6 @@ async function initModeSystem() {
         console.error("Mode init failed:", e);
         setMode("lite");
     }
-
-    // Start periodic health checks
-    _startHealthCheckLoop();
 }
 
 async function checkBackendHealth() {
@@ -5139,38 +5178,55 @@ async function checkBackendHealth() {
 }
 
 async function handleManualRetry() {
-    if (!auraBackendUrl) {
-        showToast("No server URL configured.");
-        return;
-    }
-    
-    const retryBtns = [
-        document.getElementById("mode-retry-btn"),
-        document.getElementById("mode-dropdown-retry-btn")
-    ];
-    retryBtns.forEach(btn => {
-        if (btn) {
-            btn.disabled = true;
-            const icon = btn.querySelector("i");
-            if (icon) icon.classList.add("fa-spin");
+    if (auraMode === "pro") {
+        if (!auraBackendUrl) {
+            showToast("No server URL configured.");
+            return;
         }
-    });
-    
-    const isAlive = await checkBackendHealth();
-    
-    retryBtns.forEach(btn => {
-        if (btn) {
-            btn.disabled = false;
-            const icon = btn.querySelector("i");
-            if (icon) icon.classList.remove("fa-spin");
+        
+        const retryBtns = [
+            document.getElementById("mode-retry-btn"),
+            document.getElementById("mode-dropdown-retry-btn")
+        ];
+        retryBtns.forEach(btn => {
+            if (btn) {
+                btn.disabled = true;
+                const icon = btn.querySelector("i");
+                if (icon) icon.classList.add("fa-spin");
+            }
+        });
+        
+        const isAlive = await checkBackendHealth();
+        
+        retryBtns.forEach(btn => {
+            if (btn) {
+                btn.disabled = false;
+                const icon = btn.querySelector("i");
+                if (icon) icon.classList.remove("fa-spin");
+            }
+        });
+        
+        if (isAlive) {
+            // success: stay Pro + brief green flash on dot
+            document.querySelectorAll(".mode-dot").forEach(dot => {
+                dot.style.boxShadow = "0 0 20px #22c55e, 0 0 40px #22c55e";
+                dot.style.transform = "scale(1.5)";
+                setTimeout(() => {
+                    dot.style.boxShadow = "";
+                    dot.style.transform = "";
+                }, 500);
+            });
+        } else {
+            // fail: stay Pro + toast 'Server unreachable'
+            showToast("Server unreachable");
         }
-    });
-    
-    if (isAlive) {
-        setMode("pro");
-        hasShownOfflineToast = false;
     } else {
-        showToast("Server still unreachable");
+        // Lite Mode: reload Lite home content only
+        localStorage.removeItem("aura_home_trending_lite");
+        localStorage.removeItem("aura_home_new_lite");
+        localStorage.removeItem("aura_home_cache_time_lite");
+        showToast("Reloading For You feed...");
+        loadHomeData();
     }
 }
 
@@ -5212,26 +5268,7 @@ function updateModeUI() {
     if (connDot) connDot.className = `mode-dot ${dotClass}`;
 }
 
-function _startHealthCheckLoop() {
-    if (healthCheckIntervalId) clearInterval(healthCheckIntervalId);
-    healthCheckIntervalId = setInterval(async () => {
-        if (!auraBackendUrl) return; // No URL saved, nothing to check
-        const isAlive = await checkBackendHealth();
-        if (auraMode === "pro" && !isAlive) {
-            setMode("lite");
-            if (!hasShownOfflineToast) {
-                showToast("Server offline, Lite Mode mein chal rahe ho.");
-                hasShownOfflineToast = true;
-            }
-        } else if (isAlive) {
-            hasShownOfflineToast = false;
-            if (auraMode === "lite") {
-                setMode("pro");
-                showToast("Server reconnected, Pro Mode ⚡");
-            }
-        }
-    }, HEALTH_CHECK_INTERVAL_MS);
-}
+// Periodic health check loop has been removed to prioritize manual-only mode switching.
 
 async function saveBackendUrl(rawUrl) {
     // Normalize: trim, strip trailing slash, validate protocol
