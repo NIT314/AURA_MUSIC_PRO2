@@ -1591,6 +1591,9 @@ async function playSingleSong(track, autoplay = true, fromJamSync = false, keepI
                 return;
             }
         } else {
+            if (!track.isLocal) {
+                updateDownloadAccessTime(track.id);
+            }
             // Check if track is cached offline first!
             const cache = await caches.open("aura-audio-cache");
             const cacheKey = `/api/stream?video_id=${track.id}`;
@@ -2552,6 +2555,198 @@ async function downloadTrackFromRow(event, trackId) {
         statusCard.classList.add("hide");
     }
 }
+
+function updateDownloadAccessTime(trackId) {
+    try {
+        const times = JSON.parse(localStorage.getItem("aura_downloads_access_times")) || {};
+        times[trackId] = Date.now();
+        localStorage.setItem("aura_downloads_access_times", JSON.stringify(times));
+    } catch (e) {
+        console.error("Failed to update download access time:", e);
+    }
+}
+
+class JamPreloader {
+    constructor() {
+        this.activeQueue = [];
+        this.currentTrackId = null;
+        this.runId = 0;
+    }
+
+    async start(queue, currentTrackId) {
+        this.activeQueue = queue || [];
+        this.currentTrackId = currentTrackId;
+        
+        // Cancel any active run
+        this.runId++;
+        const currentRunId = this.runId;
+
+        if (this.activeQueue.length === 0) return;
+
+        // Priority sorting
+        const prioritized = this.getPrioritizedTracks();
+
+        // Start background sequential downloads
+        setTimeout(async () => {
+            for (const track of prioritized) {
+                if (this.runId !== currentRunId) {
+                    break;
+                }
+                
+                try {
+                    await this.preloadTrack(track, currentRunId);
+                } catch (e) {
+                    console.error("JamPreloader failed preloading track:", track.id, e);
+                }
+            }
+        }, 1000); // Small initial delay to prioritize active socket traffic
+    }
+
+    stop() {
+        this.runId++;
+        this.activeQueue = [];
+        this.currentTrackId = null;
+    }
+
+    getPrioritizedTracks() {
+        const tracks = [...this.activeQueue];
+        const currentIdx = tracks.findIndex(t => t.id === this.currentTrackId);
+        
+        const prioritized = [];
+        if (currentIdx !== -1) {
+            // Priority 1: Current track
+            prioritized.push(tracks[currentIdx]);
+            // Priority 2: Next track in queue
+            if (currentIdx + 1 < tracks.length) {
+                prioritized.push(tracks[currentIdx + 1]);
+            }
+            // Priority 3: All other tracks
+            tracks.forEach((t, idx) => {
+                if (idx !== currentIdx && idx !== currentIdx + 1) {
+                    prioritized.push(t);
+                }
+            });
+        } else {
+            // If current track not in queue, download in sequence order
+            prioritized.push(...tracks);
+        }
+        return prioritized;
+    }
+
+    async preloadTrack(track, runId) {
+        if (!track || !track.id) return;
+        if (track.isLocal) return; // Skip local uploaded songs
+        
+        const cache = await caches.open("aura-audio-cache");
+        const streamUrl = `/api/stream?video_id=${track.id}`;
+        
+        // 1. Check if already cached
+        const match = await cache.match(streamUrl);
+        if (match) {
+            updateDownloadAccessTime(track.id);
+            return;
+        }
+
+        // 2. Storage quota check & LRU Eviction
+        await this.checkStorageAndEvict();
+
+        if (this.runId !== runId) return;
+
+        // 3. Fetch stream URL silently
+        try {
+            const res = await fetch(streamUrl);
+            if (res.ok) {
+                if (this.runId !== runId) return;
+                await cache.put(streamUrl, res);
+                
+                // Add to downloadedSongs so it's recognized as offline
+                if (!downloadedSongs.some(s => s.id === track.id)) {
+                    downloadedSongs.push(track);
+                    saveStateToStorage("aura_downloads", downloadedSongs);
+                    if (window.renderLibraryDownloads) {
+                        window.renderLibraryDownloads();
+                    }
+                }
+                updateDownloadAccessTime(track.id);
+            }
+        } catch (e) {
+            if (e.name === 'QuotaExceededError') {
+                console.warn("Storage quota exceeded on preload, running urgent eviction.");
+                await this.checkStorageAndEvict(true);
+            } else {
+                throw e;
+            }
+        }
+    }
+
+    async checkStorageAndEvict(forceEvict = false) {
+        if (!navigator.storage || !navigator.storage.estimate) return;
+
+        try {
+            let estimate = await navigator.storage.estimate();
+            let usagePct = estimate.usage / estimate.quota;
+
+            // Evict if usage exceeds 80% or if forceEvict is requested
+            while ((usagePct > 0.8 || forceEvict) && downloadedSongs.length > 0) {
+                const evicted = await this.evictOldestNonQueueTrack();
+                if (!evicted) {
+                    // No candidate non-queue songs left to evict
+                    break;
+                }
+                estimate = await navigator.storage.estimate();
+                usagePct = estimate.usage / estimate.quota;
+                forceEvict = false; // Reset force evict once at least one song is removed
+            }
+        } catch (e) {
+            console.error("Storage estimation/eviction check failed:", e);
+        }
+    }
+
+    async evictOldestNonQueueTrack() {
+        // Collect IDs currently in the Jam queue
+        const activeIds = this.activeQueue.map(item => item.id);
+        
+        // Non-queue downloaded songs
+        const candidates = downloadedSongs.filter(track => !activeIds.includes(track.id));
+        if (candidates.length === 0) return false;
+
+        // Retrieve access timestamps
+        let times = {};
+        try {
+            times = JSON.parse(localStorage.getItem("aura_downloads_access_times")) || {};
+        } catch (e) {}
+
+        // Sort candidates by access time (oldest first)
+        candidates.sort((a, b) => {
+            const timeA = times[a.id] || 0;
+            const timeB = times[b.id] || 0;
+            return timeA - timeB;
+        });
+
+        const target = candidates[0];
+        console.log(`JamPreloader LRU Eviction: Deleting oldest song "${target.title}" (ID: ${target.id})`);
+
+        // Delete from Cache Storage
+        const cache = await caches.open("aura-audio-cache");
+        const streamUrl = `/api/stream?video_id=${target.id}`;
+        await cache.delete(streamUrl);
+
+        // Remove from downloadedSongs meta list
+        downloadedSongs = downloadedSongs.filter(s => s.id !== target.id);
+        saveStateToStorage("aura_downloads", downloadedSongs);
+        if (window.renderLibraryDownloads) {
+            window.renderLibraryDownloads();
+        }
+
+        // Clean up access time registry
+        delete times[target.id];
+        localStorage.setItem("aura_downloads_access_times", JSON.stringify(times));
+
+        return true;
+    }
+}
+
+window.jamPreloader = new JamPreloader();
 
 // 8. VOICE ASSISTANT (Speech Control)
 

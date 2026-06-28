@@ -189,6 +189,9 @@ function setJamSyncStatus(status) {
 }
 
 function exitJamUI() {
+    if (window.jamPreloader) {
+        window.jamPreloader.stop();
+    }
     clearTimeout(jamReconnectTimer);
     clearInterval(clockSyncInterval);
     clockSyncInterval = null;
@@ -419,6 +422,9 @@ function handleJamWSMessage(data) {
 // UI State Bindings
 
 function updateJamRoomUI(state, serverTime = null) {
+    if (window.jamPreloader) {
+        window.jamPreloader.start(state.queue, state.playback.current_track ? state.playback.current_track.id : null);
+    }
     currentJamRoomState = state;
     // 1. Resolve current user role
     const me = state.users.find(u => u.username.toLowerCase() === currentUsername.toLowerCase());
