@@ -23,6 +23,7 @@ class JamRoom:
         self.host_pending_reconnect = False
         self.grace_period_task = None
         self.add_only_mode = False
+        self.manual_order = False
 
     def get_role(self, username: str) -> str:
         return self.roles.get(username, "listener")
@@ -50,18 +51,30 @@ class JamRoom:
 
     async def connect(self, username: str, websocket: WebSocket):
         if username in self.active_connections:
-            # Must accept first, then close — otherwise the custom close code never reaches the browser
-            await websocket.accept()
+            old_ws = self.active_connections[username]
+            from starlette.websockets import WebSocketState
+            is_disconnected = False
             try:
-                await websocket.send_text(json.dumps({
-                    "type": "error",
-                    "code": 4001,
-                    "reason": "Username already taken"
-                }))
+                if old_ws.client_state == WebSocketState.DISCONNECTED or old_ws.application_state == WebSocketState.DISCONNECTED:
+                    is_disconnected = True
             except Exception:
-                pass
-            await websocket.close(code=4001, reason="Username already taken")
-            return False
+                is_disconnected = True
+                
+            if is_disconnected:
+                del self.active_connections[username]
+            else:
+                # Must accept first, then close — otherwise the custom close code never reaches the browser
+                await websocket.accept()
+                try:
+                    await websocket.send_text(json.dumps({
+                        "type": "error",
+                        "code": 4001,
+                        "reason": "Username already taken"
+                    }))
+                except Exception:
+                    pass
+                await websocket.close(code=4001, reason="Username already taken")
+                return False
         await websocket.accept()
         self.active_connections[username] = websocket
         if username not in self.roles:
@@ -240,7 +253,8 @@ class JamRoom:
                 else:
                     item["votes"][username] = vote
                 break
-        self.sort_queue()
+        if not self.manual_order:
+            self.sort_queue()
         await self.broadcast_state()
 
     async def remove_from_queue(self, username: str, song_id: str):
@@ -265,6 +279,7 @@ class JamRoom:
     async def reorder_queue(self, username: str, queue_ids: List[str]):
         if not self.has_permission(username, "control_playback"):
             return
+        self.manual_order = True
         id_to_item = {item["id"]: item for item in self.queue}
         new_queue = []
         for q_id in queue_ids:
@@ -440,7 +455,8 @@ class JamRoom:
         state = self.get_room_state_dict()
         await self.broadcast({
             "type": "room_state",
-            "state": state
+            "state": state,
+            "server_time": time.time() * 1000
         })
 
     async def broadcast(self, message: dict):

@@ -52,7 +52,8 @@ function updatePlaybackRateRamp() {
             audio.playbackRate = currentPlaybackRate;
             console.log(`Ramping playbackRate: ${audio.playbackRate.toFixed(4)}`);
         }
-        requestAnimationFrame(updatePlaybackRateRamp);
+        // Use setTimeout instead of requestAnimationFrame for background execution safety
+        setTimeout(updatePlaybackRateRamp, 100);
     } else {
         currentPlaybackRate = targetPlaybackRate;
         audio.playbackRate = currentPlaybackRate;
@@ -88,6 +89,8 @@ let clockOffset = 0;
 let clockSyncInProgress = false;
 let clockSyncInterval = null;
 let hostHeartbeatInterval = null;
+let clockSynced = false;
+let bufferedInitialState = null;
 
 // 🔥 SMART NETWORK LISTENER: Jaise hi phone mein internet wapas aayega, turant reconnect fire hoga
 window.addEventListener('online', () => {
@@ -133,12 +136,14 @@ function connectJamRoom(username, roomCode, isReconnect = false) {
         return;
     }
     
-    jamSocket.onopen = () => {
+    jamSocket.onopen = async () => {
         jamReconnectAttempts = 0;
         clearTimeout(jamReconnectTimer);
         setJamSyncStatus('online');
         
-        runClockSync();
+        await runClockSync();
+        clockSynced = true;
+        
         clearInterval(clockSyncInterval);
         clockSyncInterval = setInterval(runClockSync, 45000);
         
@@ -149,6 +154,12 @@ function connectJamRoom(username, roomCode, isReconnect = false) {
             document.getElementById("jam-room-code-display").innerText = currentRoomCode;
             // Hide standard local player queue button if inside Jam
             document.getElementById("player-queue-toggle-btn").style.opacity = "0.5";
+        }
+
+        // Apply any room state packet that was buffered during the initial clock sync
+        if (bufferedInitialState) {
+            updateJamRoomUI(bufferedInitialState.state, bufferedInitialState.serverTime);
+            bufferedInitialState = null;
         }
     };
     
@@ -233,6 +244,8 @@ function exitJamUI() {
     currentUserRole = "listener";
     jamShouldReconnect = false;
     jamReconnectAttempts = 0;
+    clockSynced = false;
+    bufferedInitialState = null;
     
     // Reset playback rate ramping variables
     targetPlaybackRate = 1.0;
@@ -251,22 +264,28 @@ function exitJamUI() {
 function leaveJamRoom() {
     jamShouldReconnect = false; // Manual leave - don't reconnect
     clearTimeout(jamReconnectTimer);
-    if (jamSocket && jamSocket.readyState === WebSocket.OPEN) {
-        if (currentUserRole === 'host') {
-            jamSocket.send(JSON.stringify({ type: "end_jam" }));
-        } else {
-            jamSocket.send(JSON.stringify({ type: "leave" }));
-        }
-        setTimeout(() => {
-            if (jamSocket) {
-                jamSocket.close();
-                jamSocket = null;
+    if (jamSocket) {
+        const state = jamSocket.readyState;
+        if (state === WebSocket.OPEN) {
+            if (currentUserRole === 'host') {
+                jamSocket.send(JSON.stringify({ type: "end_jam" }));
+            } else {
+                jamSocket.send(JSON.stringify({ type: "leave" }));
             }
-            exitJamUI();
-        }, 100);
-    } else {
-        exitJamUI();
+        }
+        // Force close if socket is connecting or open
+        if (state <= WebSocket.OPEN) {
+            setTimeout(() => {
+                if (jamSocket) {
+                    jamSocket.close();
+                    jamSocket = null;
+                }
+                exitJamUI();
+            }, 100);
+            return;
+        }
     }
+    exitJamUI();
 }
 
 // Outgoing websocket transmissions
@@ -369,7 +388,11 @@ function handleJamWSMessage(data) {
     const type = data.type;
     
     if (type === "room_state") {
-        updateJamRoomUI(data.state);
+        if (!clockSynced) {
+            bufferedInitialState = { state: data.state, serverTime: data.server_time };
+        } else {
+            updateJamRoomUI(data.state, data.server_time);
+        }
     } 
     else if (type === "playback_sync") {
         // If I am the sender, ignore. Or if I am the Host (Host is source of truth, doesn't sync from others)
@@ -422,7 +445,7 @@ function handleJamWSMessage(data) {
 
 // UI State Bindings
 
-function updateJamRoomUI(state) {
+function updateJamRoomUI(state, serverTime = null) {
     currentJamRoomState = state;
     // 1. Resolve current user role
     const me = state.users.find(u => u.username === currentUsername);
@@ -649,7 +672,7 @@ function updateJamRoomUI(state) {
                 state: state.playback.state,
                 position: state.playback.position,
                 track: state.playback.current_track,
-                server_time: state.playback.last_updated * 1000
+                server_time: serverTime || (Date.now() + clockOffset)
             });
         }
     }
@@ -750,7 +773,7 @@ function syncLocalPlayback(data) {
                 // Minor drift: Perform elastic sync using target recovery window of 3 seconds
                 const recoveryTime = 3.0;
                 const rateOffset = -drift / recoveryTime;
-                const clampedOffset = Math.max(-0.03, Math.min(0.03, rateOffset));
+                const clampedOffset = Math.max(-0.015, Math.min(0.015, rateOffset));
                 const targetRate = 1.0 + clampedOffset;
                 
                 console.log(`Minor drift detected (${Math.round(drift * 1000)}ms). Adjusting target playbackRate to ${targetRate.toFixed(4)}`);
@@ -945,6 +968,20 @@ async function runClockSync() {
         clockOffset = avgOffset;
         currentMedianRTT = samples[0].rtt;
         console.log(`Clock sync: offset=${Math.round(clockOffset)}ms. RTT median=${Math.round(samples[0].rtt)}ms.`);
+        
+        // Trigger a sync alignment check once the initial clock offset is resolved!
+        if (currentJamRoomState && currentUserRole !== "host") {
+            const state = currentJamRoomState;
+            if (state.playback.current_track && state.playback.current_track.id) {
+                syncLocalPlayback({
+                    video_id: state.playback.current_track.id,
+                    state: state.playback.state,
+                    position: state.playback.position,
+                    track: state.playback.current_track,
+                    server_time: Date.now() + clockOffset
+                });
+            }
+        }
     }
 }
 

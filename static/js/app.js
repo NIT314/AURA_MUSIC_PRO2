@@ -37,6 +37,8 @@ function safe(str) {
 let playerQueue = [];
 let currentQueueIndex = -1;
 let currentLoadedTrack = null;
+let currentAudioObjectURL = null;
+let lastPreloadedTrackId = null;
 let playbackHistory = [];
 let skippedTracks = [];
 let infiniteQueue = [];
@@ -1082,6 +1084,9 @@ function initPlayerBindings() {
         document.getElementById("mini-progress-fill").style.width = `${pct}%`;
         
         currentTimer.innerText = formatDurationSec(audio.currentTime);
+
+        // Preload next track if remaining time is less than 20 seconds
+        checkPreloadNextTrack();
         
         // Syced lyrics timing cursor alignment
         updateLyricsTimeline(audio.currentTime);
@@ -1523,6 +1528,10 @@ async function playSingleSong(track, autoplay = true, fromJamSync = false, keepI
             miniProgressFill.style.width = "0%";
         }
 
+        if (currentAudioObjectURL) {
+            URL.revokeObjectURL(currentAudioObjectURL);
+            currentAudioObjectURL = null;
+        }
         audio.src = "";
         audio.load();
 
@@ -1536,7 +1545,9 @@ async function playSingleSong(track, autoplay = true, fromJamSync = false, keepI
             console.log(`Retrieving local song file from IndexedDB: ${track.title}`);
             const fileBlob = await getLocalSongFileFromDB(track.id);
             if (fileBlob) {
-                audio.src = URL.createObjectURL(fileBlob);
+                const objectUrl = URL.createObjectURL(fileBlob);
+                currentAudioObjectURL = objectUrl;
+                audio.src = objectUrl;
             } else {
                 showToast("Local file not found in database. 🎙️❌");
                 return;
@@ -1551,7 +1562,9 @@ async function playSingleSong(track, autoplay = true, fromJamSync = false, keepI
                 isPlayingNative = false;
                 console.log(`Loading cached offline stream for ${track.title}`);
                 const audioBlob = await cachedResponse.blob();
-                audio.src = URL.createObjectURL(audioBlob);
+                const objectUrl = URL.createObjectURL(audioBlob);
+                currentAudioObjectURL = objectUrl;
+                audio.src = objectUrl;
                 showToast("Playing Offline Saved Audio 📶");
             } else {
                 // Online stream proxy
@@ -1621,6 +1634,43 @@ async function playSingleSong(track, autoplay = true, fromJamSync = false, keepI
     } catch (err) {
         console.error("Stream load failed:", err);
         showToast("Error loading audio source.");
+    }
+}
+
+function checkPreloadNextTrack() {
+    if (!audio || audio.paused || isNaN(audio.duration)) return;
+    
+    const remaining = audio.duration - audio.currentTime;
+    if (remaining < 20 && remaining > 5) {
+        let nextTrack = null;
+        if (window.isInsideJam && window.isInsideJam()) {
+            const queue = window.getJamQueue ? window.getJamQueue() : [];
+            const currentTrack = window.currentLoadedTrack;
+            if (currentTrack && queue.length > 0) {
+                const idx = queue.findIndex(t => t.id === currentTrack.id);
+                if (idx !== -1 && idx + 1 < queue.length) {
+                    nextTrack = queue[idx + 1];
+                }
+            }
+        } else {
+            // Local player queue next track
+            if (playerQueue && playerQueue.length > 0) {
+                const nextIdx = getNextTrackIndex(false);
+                if (nextIdx !== -1 && nextIdx !== currentQueueIndex) {
+                    nextTrack = playerQueue[nextIdx];
+                }
+            }
+        }
+        
+        if (nextTrack && !nextTrack.isLocal && lastPreloadedTrackId !== nextTrack.id) {
+            lastPreloadedTrackId = nextTrack.id;
+            console.log(`Preloading next track stream: ${nextTrack.title}`);
+            const link = document.createElement("link");
+            link.rel = "prefetch";
+            link.as = "audio";
+            link.href = `/api/stream?video_id=${nextTrack.id}`;
+            document.head.appendChild(link);
+        }
     }
 }
 
