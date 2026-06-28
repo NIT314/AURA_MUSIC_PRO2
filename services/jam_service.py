@@ -26,7 +26,10 @@ class JamRoom:
         self.manual_order = False
 
     def get_role(self, username: str) -> str:
-        return self.roles.get(username, "listener")
+        for k, v in self.roles.items():
+            if k.lower() == username.lower():
+                return v
+        return "listener"
 
     def has_permission(self, username: str, action: str) -> bool:
         role = self.get_role(username)
@@ -45,13 +48,19 @@ class JamRoom:
         return False
 
     async def toggle_add_only_mode(self, username: str, enabled: bool):
-        if username == self.host_username:
+        if username.lower() == self.host_username.lower():
             self.add_only_mode = bool(enabled)
             await self.broadcast_state()
 
     async def connect(self, username: str, websocket: WebSocket):
-        if username in self.active_connections:
-            old_ws = self.active_connections[username]
+        active_username_match = None
+        for k in self.active_connections.keys():
+            if k.lower() == username.lower():
+                active_username_match = k
+                break
+                
+        if active_username_match:
+            old_ws = self.active_connections[active_username_match]
             from starlette.websockets import WebSocketState
             is_disconnected = False
             try:
@@ -61,7 +70,7 @@ class JamRoom:
                 is_disconnected = True
                 
             if is_disconnected:
-                del self.active_connections[username]
+                del self.active_connections[active_username_match]
             else:
                 # Must accept first, then close — otherwise the custom close code never reaches the browser
                 await websocket.accept()
@@ -77,7 +86,13 @@ class JamRoom:
                 return False
         await websocket.accept()
         self.active_connections[username] = websocket
-        if username not in self.roles:
+        
+        has_role = False
+        for k in self.roles.keys():
+            if k.lower() == username.lower():
+                has_role = True
+                break
+        if not has_role:
             self.roles[username] = "listener"
         
         # Send initial chat history directly to the newly connected user only!
@@ -90,7 +105,7 @@ class JamRoom:
             pass
         
         # If the host reconnects, cancel the grace period timer
-        if username == self.host_username:
+        if username.lower() == self.host_username.lower():
             if self.host_pending_reconnect:
                 self.host_pending_reconnect = False
                 if self.grace_period_task:
@@ -109,12 +124,18 @@ class JamRoom:
         return True
 
     async def disconnect(self, username: str, websocket: WebSocket = None):
-        if username in self.active_connections:
-            if websocket is not None and self.active_connections[username] != websocket:
+        target_username = None
+        for k in self.active_connections.keys():
+            if k.lower() == username.lower():
+                target_username = k
+                break
+                
+        if target_username:
+            if websocket is not None and self.active_connections[target_username] != websocket:
                 return
-            del self.active_connections[username]
+            del self.active_connections[target_username]
             
-        if username == self.host_username:
+        if username.lower() == self.host_username.lower():
             if self.host_explicitly_left:
                 await self.destroy_room("host_left")
                 return
@@ -175,12 +196,12 @@ class JamRoom:
             del rooms[self.room_code]
 
     async def close_room(self, username: str):
-        if username == self.host_username:
+        if username.lower() == self.host_username.lower():
             self.host_explicitly_left = True
             await self.destroy_room("host_left")
 
     async def handle_heartbeat_sync(self, username: str, video_id: str, position: float):
-        if username != self.host_username:
+        if username.lower() != self.host_username.lower():
             return
         self.playback_time = float(position)
         self.playback_state = "PLAYING"
@@ -400,19 +421,26 @@ class JamRoom:
         })
 
     async def set_user_role(self, host_username: str, target_user: str, new_role: str):
-        if host_username != self.host_username:
+        if host_username.lower() != self.host_username.lower():
             return
-        if target_user not in self.active_connections:
+        # Find connection target case-insensitively
+        target_username = None
+        for k in self.active_connections.keys():
+            if k.lower() == target_user.lower():
+                target_username = k
+                break
+                
+        if not target_username:
             return
         if new_role in ["host", "co-host", "moderator", "contributor", "listener"]:
             if new_role == "host":
                 self.roles[self.host_username] = "co-host"
-                self.host_username = target_user
-                self.roles[target_user] = "host"
-                await self.add_chat_msg("System", f"{target_user} is now the Host. {host_username} has been changed to co-host.", msg_type="system")
+                self.host_username = target_username
+                self.roles[target_username] = "host"
+                await self.add_chat_msg("System", f"{target_username} is now the Host. {host_username} has been changed to co-host.", msg_type="system")
             else:
-                self.roles[target_user] = new_role
-                await self.add_chat_msg("System", f"{target_user}'s role has been set to {new_role}.", msg_type="system")
+                self.roles[target_username] = new_role
+                await self.add_chat_msg("System", f"{target_username}'s role has been set to {new_role}.", msg_type="system")
             await self.broadcast_state()
 
     def get_room_state_dict(self):
@@ -435,7 +463,7 @@ class JamRoom:
             users_list.append({
                 "username": user,
                 "role": self.get_role(user),
-                "is_host": user == self.host_username
+                "is_host": user.lower() == self.host_username.lower()
             })
         return {
             "room_code": self.room_code,

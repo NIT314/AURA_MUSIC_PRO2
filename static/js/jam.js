@@ -396,7 +396,7 @@ function handleJamWSMessage(data) {
     } 
     else if (type === "playback_sync") {
         // If I am the sender, ignore. Or if I am the Host (Host is source of truth, doesn't sync from others)
-        if (data.sender === currentUsername || currentUserRole === "host") {
+        if ((data.sender && data.sender.toLowerCase() === currentUsername.toLowerCase()) || currentUserRole === "host") {
             return;
         }
         
@@ -448,7 +448,7 @@ function handleJamWSMessage(data) {
 function updateJamRoomUI(state, serverTime = null) {
     currentJamRoomState = state;
     // 1. Resolve current user role
-    const me = state.users.find(u => u.username === currentUsername);
+    const me = state.users.find(u => u.username.toLowerCase() === currentUsername.toLowerCase());
     if (me) {
         currentUserRole = me.role;
     }
@@ -491,7 +491,7 @@ function updateJamRoomUI(state, serverTime = null) {
         
         // Host option controls inside chip dropdown
         let actionHTML = "";
-        if (currentUserRole === "host" && user.username !== currentUsername) {
+        if (currentUserRole === "host" && user.username.toLowerCase() !== currentUsername.toLowerCase()) {
             actionHTML = `
                 <select class="role-selector" onchange="sendJamSetRole('${user.username}', this.value)" style="background:transparent; border:none; color:inherit; font-size:10px; cursor:pointer;">
                     <option value="listener" ${user.role === 'listener' ? 'selected' : ''}>Listener</option>
@@ -841,7 +841,7 @@ function appendJamChatMessage(msg) {
     const chatContainer = document.getElementById("jam-chat-messages");
     if (!chatContainer) return;
     
-    const isSelf = msg.username === currentUsername;
+    const isSelf = msg.username && msg.username.toLowerCase() === currentUsername.toLowerCase();
     const msgCard = document.createElement("div");
     msgCard.className = `chat-msg ${isSelf ? 'self-msg' : ''} ${msg.type === 'system' ? 'system-msg' : ''}`;
     

@@ -1598,7 +1598,8 @@ async function playSingleSong(track, autoplay = true, fromJamSync = false, keepI
                     return; // Early return to bypass HTML5 audio.load() and autoplay block below
                 } else {
                     isPlayingNative = false;
-                    audio.src = `/api/stream?video_id=${track.id}`;
+                    const baseUrl = (auraBackendUrl && auraBackendUrl.startsWith("http")) ? auraBackendUrl : "";
+                    audio.src = `${baseUrl}/api/stream?video_id=${track.id}`;
                 }
             }
         }
@@ -1668,7 +1669,8 @@ function checkPreloadNextTrack() {
             const link = document.createElement("link");
             link.rel = "prefetch";
             link.as = "audio";
-            link.href = `/api/stream?video_id=${nextTrack.id}`;
+            const baseUrl = (auraBackendUrl && auraBackendUrl.startsWith("http")) ? auraBackendUrl : "";
+            link.href = `${baseUrl}/api/stream?video_id=${nextTrack.id}`;
             document.head.appendChild(link);
         }
     }
