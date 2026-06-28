@@ -1568,7 +1568,7 @@ async function playSingleSong(track, autoplay = true, fromJamSync = false, keepI
                 showToast("Playing Offline Saved Audio 📶");
             } else {
                 // Online stream proxy
-                if (auraMode === "lite") {
+                if (auraMode === "lite" && !(window.isInsideJam && window.isInsideJam())) {
                     showToast("Pro Mode Server connection required to stream this song.");
                     return;
                 }
@@ -1598,7 +1598,9 @@ async function playSingleSong(track, autoplay = true, fromJamSync = false, keepI
                     return; // Early return to bypass HTML5 audio.load() and autoplay block below
                 } else {
                     isPlayingNative = false;
-                    const baseUrl = (auraBackendUrl && auraBackendUrl.startsWith("http")) ? auraBackendUrl : "";
+                    const baseUrl = (auraBackendUrl && auraBackendUrl.startsWith("http")) 
+                                    ? auraBackendUrl 
+                                    : window.location.origin; // Fallback to page origin for Jam listeners
                     audio.src = `${baseUrl}/api/stream?video_id=${track.id}`;
                 }
             }
@@ -1669,7 +1671,9 @@ function checkPreloadNextTrack() {
             const link = document.createElement("link");
             link.rel = "prefetch";
             link.as = "audio";
-            const baseUrl = (auraBackendUrl && auraBackendUrl.startsWith("http")) ? auraBackendUrl : "";
+            const baseUrl = (auraBackendUrl && auraBackendUrl.startsWith("http")) 
+                            ? auraBackendUrl 
+                            : window.location.origin;
             link.href = `${baseUrl}/api/stream?video_id=${nextTrack.id}`;
             document.head.appendChild(link);
         }
