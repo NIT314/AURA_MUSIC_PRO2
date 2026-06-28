@@ -5218,9 +5218,7 @@ window.getAuraBackendUrl = () => auraBackendUrl;
 // ==========================================================================
 
 const PIPED_INSTANCES = [
-    "https://api.piped.private.coffee",
-    "https://pipedapi.kavin.rocks",
-    "https://pipedapi-libre.kavin.rocks"
+    "https://api.piped.private.coffee"
 ];
 
 async function fetchFromPiped(endpoint, params = {}, timeoutMs = 5000, signal = null) {
@@ -5461,7 +5459,29 @@ async function loadSyncedLyricsLite(track) {
     currentActiveLyricIndex = -1;
     
     try {
-        const cleanTitle = track.title.replace(/\(.*?\)|\[.*?\]/g, "").trim();
+        let cleanTitle = track.title;
+        const emojiRegex = /[\u{1F300}-\u{1FAFF}]|[\u{2600}-\u{27BF}]/u;
+        const splitChars = ['|', '#', '(', '['];
+        let minIndex = cleanTitle.length;
+        
+        for (const char of splitChars) {
+            const idx = cleanTitle.indexOf(char);
+            if (idx !== -1 && idx < minIndex) {
+                minIndex = idx;
+            }
+        }
+        const emojiMatch = emojiRegex.exec(cleanTitle);
+        if (emojiMatch && emojiMatch.index < minIndex) {
+            minIndex = emojiMatch.index;
+        }
+        
+        cleanTitle = cleanTitle.substring(0, minIndex).trim();
+        cleanTitle = cleanTitle.replace(/-\s*$/, "").trim();
+        
+        if (!cleanTitle) {
+            cleanTitle = track.title.replace(/\(.*?\)|\[.*?\]/g, "").trim();
+        }
+
         const cleanArtist = track.artist.replace(/\(.*?\)|\[.*?\]/g, "").trim();
         let url = `https://lrclib.net/api/lookup?track_name=${encodeURIComponent(cleanTitle)}&artist_name=${encodeURIComponent(cleanArtist)}`;
         if (track.durationSeconds) {
