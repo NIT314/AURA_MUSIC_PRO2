@@ -56,6 +56,8 @@ let searchResultsCache = [];
 let currentActiveLyricIndex = -1;
 let crossfadeIntervalId = null;
 let searchDebounceTimer = null;
+let suggestionsAbortController = null;
+let normalSuggestionsAbortController = null;
 let hiddenTracks = [];
 let excludedFromRecommendations = [];
 
@@ -67,6 +69,17 @@ let shuffledQueueOrder = null; // array of indices, when shuffle is active
 let auraMode = "lite";           // "pro" | "lite"
 let auraBackendUrl = "";         // user-supplied backend URL
 let healthCheckIntervalId = null;
+
+// Native Capacitor state
+let isPlayingNative = false;
+let isNativePlaybackPlaying = false;
+let nativeTrackDuration = 0;
+
+function isNative() {
+    return typeof Capacitor !== 'undefined' && Capacitor.isNativePlatform && Capacitor.isNativePlatform();
+}
+
+const AuraPlayerPlugin = (isNative() && Capacitor.Plugins) ? Capacitor.Plugins.AuraPlayerPlugin : null;
 
 // DOM Elements
 const audio = document.getElementById("audio-element");
@@ -611,17 +624,20 @@ function initSearchEngine() {
 
     searchInput.addEventListener("input", () => {
         const val = searchInput.value.trim();
+        clearTimeout(searchDebounceTimer);
+        
         if (val) {
             clearBtn.style.display = "block";
             
             // Debounce Suggestion API
-            clearTimeout(searchDebounceTimer);
             searchDebounceTimer = setTimeout(() => {
                 fetchSuggestions(val);
             }, 300);
         } else {
             clearBtn.style.display = "none";
             suggestionBox.classList.add("hide");
+            if (suggestionsAbortController) suggestionsAbortController.abort();
+            if (normalSuggestionsAbortController) normalSuggestionsAbortController.abort();
         }
     });
 
@@ -629,6 +645,9 @@ function initSearchEngine() {
         if (e.key === "Enter") {
             const query = searchInput.value.trim();
             if (query) {
+                clearTimeout(searchDebounceTimer);
+                if (suggestionsAbortController) suggestionsAbortController.abort();
+                if (normalSuggestionsAbortController) normalSuggestionsAbortController.abort();
                 performSearch(query, selectedFilter);
                 suggestionBox.classList.add("hide");
             }
@@ -717,12 +736,23 @@ async function fetchSuggestions(q) {
     if (auraMode === "lite") {
         return fetchSuggestionsLite(q);
     }
+    
+    if (normalSuggestionsAbortController) {
+        normalSuggestionsAbortController.abort();
+    }
+    normalSuggestionsAbortController = new AbortController();
+    const signal = normalSuggestionsAbortController.signal;
+    
     try {
-        const res = await fetch(`/api/suggestions?q=${encodeURIComponent(q)}`);
+        const res = await fetch(`/api/suggestions?q=${encodeURIComponent(q)}`, { signal });
         const suggestions = await res.json();
-        renderSuggestionsUI(suggestions);
+        if (!signal.aborted) {
+            renderSuggestionsUI(suggestions);
+        }
     } catch (e) {
-        console.error("Suggestions fetch error:", e);
+        if (e.name !== 'AbortError') {
+            console.error("Suggestions fetch error:", e);
+        }
     }
 }
 
@@ -740,7 +770,9 @@ function renderSuggestionsUI(suggestions) {
         item.className = "suggestion-item";
         item.innerHTML = `<i class="fa-solid fa-clock-rotate-left"></i><span>${s}</span>`;
         item.addEventListener("click", () => {
-            if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+            clearTimeout(searchDebounceTimer);
+            if (suggestionsAbortController) suggestionsAbortController.abort();
+            if (normalSuggestionsAbortController) normalSuggestionsAbortController.abort();
             document.getElementById("search-input").value = s;
             box.classList.add("hide");
             performSearch(s, "all");
@@ -993,15 +1025,23 @@ function initPlayerBindings() {
         window.initEqualizer(audio);
         window.resumeAudioContext();
         
-        if (audio.paused) {
-            audio.play().then(() => {
-                onSongPlayStateChange(true);
-            }).catch(err => {
-                console.error("Audio playback error:", err);
-            });
+        if (isNative() && isPlayingNative && AuraPlayerPlugin) {
+            if (isNativePlaybackPlaying) {
+                AuraPlayerPlugin.pause().catch(err => console.error("Native pause failed:", err));
+            } else {
+                AuraPlayerPlugin.resume().catch(err => console.error("Native resume failed:", err));
+            }
         } else {
-            audio.pause();
-            onSongPlayStateChange(false);
+            if (audio.paused) {
+                audio.play().then(() => {
+                    onSongPlayStateChange(true);
+                }).catch(err => {
+                    console.error("Audio playback error:", err);
+                });
+            } else {
+                audio.pause();
+                onSongPlayStateChange(false);
+            }
         }
     };
 
@@ -1049,6 +1089,24 @@ function initPlayerBindings() {
 
     // Seek bar manual seek input
     seekbar.addEventListener("input", () => {
+        if (isNative() && isPlayingNative && AuraPlayerPlugin) {
+            if (nativeTrackDuration > 0) {
+                const targetPos = (seekbar.value / 100) * nativeTrackDuration;
+                AuraPlayerPlugin.seek({ position: targetPos }).catch(err => console.error("Native seek failed:", err));
+                
+                // Notify Jam WebSocket if in co-listening
+                if (window.isInsideJam() && (window.getJamRole() === 'host' || window.getJamRole() === 'co-host')) {
+                    window.sendJamPlaybackUpdate(
+                        currentLoadedTrack.id, 
+                        isNativePlaybackPlaying ? "PLAYING" : "PAUSED", 
+                        targetPos, 
+                        currentLoadedTrack
+                    );
+                }
+            }
+            return;
+        }
+
         if (isNaN(audio.duration)) return;
         const targetPos = (seekbar.value / 100) * audio.duration;
         audio.currentTime = targetPos;
@@ -1133,6 +1191,60 @@ function initPlayerBindings() {
 
     // Initialize Song/Lyrics view toggle pill (Round B1)
     initViewTogglePill();
+
+    // Native Player State Change Event Listener
+    if (isNative() && AuraPlayerPlugin) {
+        AuraPlayerPlugin.addListener('onStateChange', (info) => {
+            console.log("Native player state change event:", info);
+            
+            // 1. Check queue skip controls from lockscreen/headset
+            if (info.action === "next") {
+                playNextTrack(true); // Reuse existing next track logic
+                return;
+            }
+            if (info.action === "prev") {
+                playPrevTrack(); // Reuse existing prev track logic
+                return;
+            }
+            
+            // Update native player states
+            isNativePlaybackPlaying = info.isPlaying;
+            onSongPlayStateChange(info.isPlaying);
+            
+            if (info.duration > 0) {
+                nativeTrackDuration = info.duration;
+                const pct = (info.currentPosition / info.duration) * 100;
+                const seekbar = document.getElementById("player-seekbar");
+                const currentTimer = document.getElementById("player-time-current");
+                const miniProgressFill = document.getElementById("mini-progress-fill");
+                
+                if (seekbar) {
+                    seekbar.value = pct;
+                    seekbar.style.background = `linear-gradient(to right, var(--gold) ${pct}%, rgba(255,255,255,0.1) ${pct}%)`;
+                }
+                if (miniProgressFill) {
+                    miniProgressFill.style.width = `${pct}%`;
+                }
+                if (currentTimer) {
+                    currentTimer.innerText = formatDurationSec(info.currentPosition);
+                }
+                
+                // Sync internal audio.currentTime for visualizers and Jam broadcasts
+                try {
+                    audio.currentTime = info.currentPosition;
+                } catch (e) {
+                    // Suppress if audio element is not initialized/loaded
+                }
+                
+                // Update lyrics timeline cursor
+                updateLyricsTimeline(info.currentPosition);
+            }
+            
+            if (info.error) {
+                showToast(`Native player error: ${info.error}`);
+            }
+        });
+    }
 }
 
 function initViewTogglePill() {
@@ -1414,7 +1526,13 @@ async function playSingleSong(track, autoplay = true, fromJamSync = false, keepI
         audio.src = "";
         audio.load();
 
+        if (isNative() && AuraPlayerPlugin) {
+            // Stop any current native playback
+            AuraPlayerPlugin.stop().catch(() => {});
+        }
+
         if (track.isLocal) {
+            isPlayingNative = false;
             console.log(`Retrieving local song file from IndexedDB: ${track.title}`);
             const fileBlob = await getLocalSongFileFromDB(track.id);
             if (fileBlob) {
@@ -1430,6 +1548,7 @@ async function playSingleSong(track, autoplay = true, fromJamSync = false, keepI
             const cachedResponse = await cache.match(cacheKey);
 
             if (cachedResponse) {
+                isPlayingNative = false;
                 console.log(`Loading cached offline stream for ${track.title}`);
                 const audioBlob = await cachedResponse.blob();
                 audio.src = URL.createObjectURL(audioBlob);
@@ -1440,7 +1559,34 @@ async function playSingleSong(track, autoplay = true, fromJamSync = false, keepI
                     showToast("Pro Mode Server connection required to stream this song.");
                     return;
                 }
-                audio.src = `/api/stream?video_id=${track.id}`;
+                
+                if (isNative() && AuraPlayerPlugin) {
+                    isPlayingNative = true;
+                    // Mute/Pause HTML5 audio player
+                    audio.pause();
+                    audio.src = "";
+                    audio.load();
+                    
+                    const streamUrl = `${auraBackendUrl}/api/stream?video_id=${track.id}`;
+                    const artworkUrl = track.thumbnail || '';
+                    
+                    AuraPlayerPlugin.play({
+                        url: streamUrl,
+                        title: track.title,
+                        artist: track.artist,
+                        artwork: artworkUrl,
+                        trackId: track.id
+                    }).then(() => {
+                        console.log("Native player playing:", track.title);
+                    }).catch(err => {
+                        console.error("Native play failed:", err);
+                        showToast("Failed to play natively");
+                    });
+                    return; // Early return to bypass HTML5 audio.load() and autoplay block below
+                } else {
+                    isPlayingNative = false;
+                    audio.src = `/api/stream?video_id=${track.id}`;
+                }
             }
         }
 
@@ -5072,16 +5218,12 @@ window.getAuraBackendUrl = () => auraBackendUrl;
 // ==========================================================================
 
 const PIPED_INSTANCES = [
+    "https://api.piped.private.coffee",
     "https://pipedapi.kavin.rocks",
-    "https://pipedapi.leptons.xyz",
-    "https://pipedapi.nosebs.ru",
-    "https://pipedapi-libre.kavin.rocks",
-    "https://piped-api.privacy.com.de",
-    "https://pipedapi.adminforge.de",
-    "https://api.piped.yt"
+    "https://pipedapi-libre.kavin.rocks"
 ];
 
-async function fetchFromPiped(endpoint, params = {}, timeoutMs = 6000) {
+async function fetchFromPiped(endpoint, params = {}, timeoutMs = 5000, signal = null) {
     const urlParams = new URLSearchParams(params).toString();
     const queryPath = urlParams ? `${endpoint}?${urlParams}` : endpoint;
     
@@ -5091,27 +5233,105 @@ async function fetchFromPiped(endpoint, params = {}, timeoutMs = 6000) {
         instances = [preferredInstance, ...instances.filter(x => x !== preferredInstance)];
     }
     
-    for (const instance of instances) {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-        try {
+    const chunkSize = 3;
+    for (let i = 0; i < instances.length; i += chunkSize) {
+        if (signal && signal.aborted) {
+            throw new DOMException("Aborted", "AbortError");
+        }
+        const chunk = instances.slice(i, i + chunkSize);
+        const controllers = [];
+        
+        const onAbort = () => {
+            controllers.forEach(c => c.abort());
+        };
+        if (signal) {
+            signal.addEventListener("abort", onAbort);
+        }
+        
+        const promises = chunk.map(instance => {
+            const controller = new AbortController();
+            controllers.push(controller);
             const url = `${instance}${queryPath}`;
-            console.log(`Trying Piped API instance: ${url}`);
-            const res = await fetch(url, {
-                signal: controller.signal,
-                headers: { "Accept": "application/json" }
+            
+            return new Promise(async (resolve, reject) => {
+                const timeoutId = setTimeout(() => {
+                    controller.abort();
+                    reject(new Error("Timeout"));
+                }, timeoutMs);
+                
+                const cleanUpSignal = () => {
+                    clearTimeout(timeoutId);
+                    if (signal) signal.removeEventListener("abort", onAbort);
+                };
+                
+                try {
+                    if (signal && signal.aborted) {
+                        cleanUpSignal();
+                        reject(new DOMException("Aborted", "AbortError"));
+                        return;
+                    }
+                    if (isNative() && Capacitor.Plugins && Capacitor.Plugins.CapacitorHttp) {
+                        console.log(`Native parallel request to: ${url}`);
+                        const response = await Capacitor.Plugins.CapacitorHttp.get({
+                            url: url,
+                            headers: { "Accept": "application/json" },
+                            connectTimeout: timeoutMs,
+                            readTimeout: timeoutMs
+                        });
+                        cleanUpSignal();
+                        if (response.status >= 200 && response.status < 300) {
+                            const data = typeof response.data === 'string' ? JSON.parse(response.data) : response.data;
+                            localStorage.setItem("preferred_piped_instance", instance);
+                            resolve(data);
+                        } else {
+                            reject(new Error(`Status: ${response.status}`));
+                        }
+                    } else {
+                        console.log(`Browser parallel request to: ${url}`);
+                        const res = await fetch(url, {
+                            signal: controller.signal,
+                            headers: { "Accept": "application/json" }
+                        });
+                        cleanUpSignal();
+                        if (res.ok) {
+                            const data = await res.json();
+                            localStorage.setItem("preferred_piped_instance", instance);
+                            resolve(data);
+                        } else {
+                            reject(new Error(`Status: ${res.status}`));
+                        }
+                    }
+                } catch (err) {
+                    cleanUpSignal();
+                    reject(err);
+                }
             });
-            clearTimeout(timeoutId);
-            if (res.ok) {
-                const data = await res.json();
-                localStorage.setItem("preferred_piped_instance", instance);
-                return data;
+        });
+        
+        try {
+            if (signal && signal.aborted) {
+                throw new DOMException("Aborted", "AbortError");
             }
-        } catch (e) {
-            clearTimeout(timeoutId);
-            console.warn(`Piped instance ${instance} failed:`, e);
+            // Race the chunk of 3 requests
+            const result = await Promise.any(promises);
+            // Cancel other active requests in this chunk immediately
+            controllers.forEach(c => c.abort());
+            return result;
+        } catch (err) {
+            console.warn(`Parallel chunk failed for indices ${i} to ${i + chunk.length - 1}:`, err);
+            controllers.forEach(c => c.abort());
+            if (signal && signal.aborted) {
+                throw new DOMException("Aborted", "AbortError");
+            }
+            // Yield to main thread briefly to prevent blocking the event loop
+            await new Promise(resolve => setTimeout(resolve, 100));
+        } finally {
+            if (signal) {
+                signal.removeEventListener("abort", onAbort);
+            }
         }
     }
+    
     throw new Error("All Piped API instances failed.");
 }
 
@@ -5150,11 +5370,21 @@ function mapPipedItem(item) {
 }
 
 async function fetchSuggestionsLite(q) {
+    if (suggestionsAbortController) {
+        suggestionsAbortController.abort();
+    }
+    suggestionsAbortController = new AbortController();
+    const signal = suggestionsAbortController.signal;
+    
     try {
-        const suggestions = await fetchFromPiped("/suggestions", { query: q });
-        renderSuggestionsUI(suggestions);
+        const suggestions = await fetchFromPiped("/suggestions", { query: q }, 5000, signal);
+        if (!signal.aborted) {
+            renderSuggestionsUI(suggestions);
+        }
     } catch (e) {
-        console.error("Lite suggestions fetch error:", e);
+        if (e.name !== 'AbortError') {
+            console.error("Lite suggestions fetch error:", e);
+        }
     }
 }
 
