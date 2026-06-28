@@ -210,7 +210,7 @@ async def jam_websocket_handler(websocket: WebSocket, room_code: str, username: 
                 t0 = data.get("t0")
                 now_ms = time.time() * 1000.0
                 try:
-                    await websocket.send_text(json.dumps({
+                    await room.send_to_ws(websocket, json.dumps({
                         "type": "pong",
                         "t0": t0,
                         "t1": now_ms,

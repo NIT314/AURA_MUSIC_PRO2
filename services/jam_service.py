@@ -24,6 +24,8 @@ class JamRoom:
         self.grace_period_task = None
         self.add_only_mode = False
         self.manual_order = False
+        self.ws_locks: Dict[WebSocket, asyncio.Lock] = {}
+        self.reaction_times: Dict[str, List[float]] = {}
 
     def get_role(self, username: str) -> str:
         for k, v in self.roles.items():
@@ -97,7 +99,7 @@ class JamRoom:
         
         # Send initial chat history directly to the newly connected user only!
         try:
-            await websocket.send_text(json.dumps({
+            await self.send_to_ws(websocket, json.dumps({
                 "type": "chat_history",
                 "history": self.chat_history
             }))
@@ -133,7 +135,10 @@ class JamRoom:
         if target_username:
             if websocket is not None and self.active_connections[target_username] != websocket:
                 return
+            ws = self.active_connections[target_username]
             del self.active_connections[target_username]
+            if ws in self.ws_locks:
+                del self.ws_locks[ws]
             
         if username.lower() == self.host_username.lower():
             if self.host_explicitly_left:
@@ -186,12 +191,15 @@ class JamRoom:
         connections = list(self.active_connections.items())
         for user, ws in connections:
             try:
-                await ws.send_text(close_msg)
+                await self.send_to_ws(ws, close_msg)
                 await ws.close(code=1000, reason="Host left the session")
             except Exception:
                 pass
+            if ws in self.ws_locks:
+                del self.ws_locks[ws]
                 
         self.active_connections.clear()
+        self.ws_locks.clear()
         if self.room_code in rooms:
             del rooms[self.room_code]
 
@@ -290,12 +298,31 @@ class JamRoom:
             if not own_song:
                 return
         self.queue = [item for item in self.queue if item["id"] != song_id]
+        if len(self.queue) == 0:
+            self.manual_order = False
         await self.broadcast_state()
 
     def sort_queue(self):
-        def get_net_votes(item):
-            return sum(item["votes"].values())
-        self.queue.sort(key=get_net_votes, reverse=True)
+        if not self.queue:
+            return
+        current_id = self.current_track.get("id") if self.current_track else None
+        current_idx = -1
+        if current_id:
+            for idx, item in enumerate(self.queue):
+                if item["id"] == current_id:
+                    current_idx = idx
+                    break
+        if current_idx == -1:
+            def get_net_votes(item):
+                return sum(item["votes"].values())
+            self.queue.sort(key=get_net_votes, reverse=True)
+        else:
+            played = self.queue[:current_idx + 1]
+            upcoming = self.queue[current_idx + 1:]
+            def get_net_votes(item):
+                return sum(item["votes"].values())
+            upcoming.sort(key=get_net_votes, reverse=True)
+            self.queue = played + upcoming
 
     async def reorder_queue(self, username: str, queue_ids: List[str]):
         if not self.has_permission(username, "control_playback"):
@@ -399,9 +426,10 @@ class JamRoom:
             await self.broadcast_state()
 
     async def add_chat_msg(self, username: str, text: str, msg_type: str = "chat"):
+        truncated_text = text[:500] if text else ""
         msg = {
             "username": username,
-            "message": text,
+            "message": truncated_text,
             "time": time.strftime("%H:%M"),
             "type": msg_type
         }
@@ -414,6 +442,14 @@ class JamRoom:
         })
 
     async def trigger_reaction(self, username: str, emoji: str):
+        now = time.time()
+        times = self.reaction_times.setdefault(username, [])
+        times = [t for t in times if now - t < 3.0]
+        if len(times) >= 5:
+            return
+        times.append(now)
+        self.reaction_times[username] = times
+
         await self.broadcast({
             "type": "reaction",
             "username": username,
@@ -479,6 +515,12 @@ class JamRoom:
             "queue": serialized_queue
         }
 
+    async def send_to_ws(self, ws: WebSocket, message_str: str):
+        if ws not in self.ws_locks:
+            self.ws_locks[ws] = asyncio.Lock()
+        async with self.ws_locks[ws]:
+            await ws.send_text(message_str)
+
     async def broadcast_state(self):
         state = self.get_room_state_dict()
         await self.broadcast({
@@ -492,7 +534,7 @@ class JamRoom:
         disconnected_users = []
         for username, ws in list(self.active_connections.items()):
             try:
-                await ws.send_text(message_str)
+                await self.send_to_ws(ws, message_str)
             except Exception:
                 disconnected_users.append((username, ws))
         for username, ws in disconnected_users:

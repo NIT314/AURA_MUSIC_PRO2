@@ -28,50 +28,7 @@ class JitterBuffer {
 const transmissionJitterBuffer = new JitterBuffer(10);
 let currentMedianRTT = 0;
 
-let targetPlaybackRate = 1.0;
-let currentPlaybackRate = 1.0;
-let rateRampActive = false;
-
-function updatePlaybackRateRamp() {
-    const audio = document.getElementById("audio-element");
-    if (!audio) {
-        rateRampActive = false;
-        return;
-    }
-    
-    const diff = targetPlaybackRate - currentPlaybackRate;
-    if (Math.abs(diff) > 0.001) {
-        const step = 0.002; // very smooth transition (0.2% change per tick)
-        if (diff > 0) {
-            currentPlaybackRate = Math.min(targetPlaybackRate, currentPlaybackRate + step);
-        } else {
-            currentPlaybackRate = Math.max(targetPlaybackRate, currentPlaybackRate - step);
-        }
-        
-        if (Math.abs(audio.playbackRate - currentPlaybackRate) > 0.001) {
-            audio.playbackRate = currentPlaybackRate;
-            console.log(`Ramping playbackRate: ${audio.playbackRate.toFixed(4)}`);
-        }
-        // Use setTimeout instead of requestAnimationFrame for background execution safety
-        setTimeout(updatePlaybackRateRamp, 100);
-    } else {
-        currentPlaybackRate = targetPlaybackRate;
-        audio.playbackRate = currentPlaybackRate;
-        rateRampActive = false;
-    }
-}
-
-function setTargetPlaybackRate(rate) {
-    targetPlaybackRate = rate;
-    const audio = document.getElementById("audio-element");
-    if (audio) {
-        currentPlaybackRate = audio.playbackRate;
-    }
-    if (!rateRampActive) {
-        rateRampActive = true;
-        updatePlaybackRateRamp();
-    }
-}
+// Playback rate is kept at constant 1.0x to avoid pitching/warping effects.
 
 let jamSocket = null;
 let currentRoomCode = "";
@@ -101,7 +58,7 @@ window.addEventListener('online', () => {
 });
 
 function connectJamRoom(username, roomCode, isReconnect = false) {
-    if (jamSocket && jamSocket.readyState === WebSocket.OPEN) {
+    if (jamSocket && jamSocket.readyState <= WebSocket.OPEN) {
         jamSocket.close();
     }
     
@@ -246,11 +203,8 @@ function exitJamUI() {
     jamReconnectAttempts = 0;
     clockSynced = false;
     bufferedInitialState = null;
+    clockSyncInProgress = false;
     
-    // Reset playback rate ramping variables
-    targetPlaybackRate = 1.0;
-    currentPlaybackRate = 1.0;
-    rateRampActive = false;
     const audio = document.getElementById("audio-element");
     if (audio) {
         audio.playbackRate = 1.0;
@@ -767,6 +721,8 @@ function syncLocalPlayback(data) {
     const audio = document.getElementById("audio-element");
     if (!audio) return;
 
+    audio.playbackRate = 1.0;
+
     const targetVideoId = data.video_id;
     const currentSong = window.currentLoadedTrack;
 
@@ -789,14 +745,22 @@ function syncLocalPlayback(data) {
 
     // If empty track, stop playback
     if (!targetVideoId) {
-        if (!audio.paused) audio.pause();
+        const nativePlay = (window.isPlayingNative && window.isPlayingNative());
+        const auraPlugin = (window.getAuraPlayerPlugin && window.getAuraPlayerPlugin());
+        if (nativePlay && auraPlugin) {
+            auraPlugin.stop().catch(() => {});
+        } else {
+            if (!audio.paused) audio.pause();
+        }
         if (window.onSongPlayStateChange) window.onSongPlayStateChange(false);
-        setTargetPlaybackRate(1.0);
         return;
     }
 
+    const nativePlay = (window.isPlayingNative && window.isPlayingNative());
+    const auraPlugin = (window.getAuraPlayerPlugin && window.getAuraPlayerPlugin());
+
     // Guard against buffering/seeking state
-    if (audio.seeking || audio.readyState < 3) {
+    if (!nativePlay && (audio.seeking || audio.readyState < 3)) {
         console.log("Audio is buffering or seeking, skipping sync alignment.");
         return;
     }
@@ -815,59 +779,48 @@ function syncLocalPlayback(data) {
     // Check if song needs to change
     if (!currentSong || currentSong.id !== targetVideoId) {
         showToast(`Syncing song: ${data.track.title}`);
-        setTargetPlaybackRate(1.0);
         if (window.playSongById) {
             window.playSongById(targetVideoId, data.track, compensatedTarget, targetState === "PLAYING");
         }
     } else {
         // Song is identical. Align states
-        if (targetState === "PLAYING" && audio.paused) {
-            audio.play().catch(() => {
-                showToast("Tap screen to authorize audio playback sync");
-            });
-            if (window.onSongPlayStateChange) window.onSongPlayStateChange(true);
-        } else if (targetState === "PAUSED" && !audio.paused) {
-            audio.pause();
-            if (window.onSongPlayStateChange) window.onSongPlayStateChange(false);
+        if (targetState === "PLAYING") {
+            const isPaused = nativePlay ? (window.isNativePlaybackPlaying && !window.isNativePlaybackPlaying()) : audio.paused;
+            if (isPaused) {
+                if (nativePlay && auraPlugin) {
+                    auraPlugin.resume().catch(e => console.error("Native sync resume failed:", e));
+                } else {
+                    audio.play().catch(() => {
+                        showToast("Tap screen to authorize audio playback sync");
+                    });
+                }
+                if (window.onSongPlayStateChange) window.onSongPlayStateChange(true);
+            }
+        } else if (targetState === "PAUSED") {
+            const isPlaying = nativePlay ? (window.isNativePlaybackPlaying && window.isNativePlaybackPlaying()) : !audio.paused;
+            if (isPlaying) {
+                if (nativePlay && auraPlugin) {
+                    auraPlugin.pause().catch(e => console.error("Native sync pause failed:", e));
+                } else {
+                    audio.pause();
+                }
+                if (window.onSongPlayStateChange) window.onSongPlayStateChange(false);
+            }
         }
         
         // Align timestamps (drift thresholds)
-        // drift > 0 means local is ahead (needs to slow down), drift < 0 means local is behind (needs to speed up)
-        const drift = audio.currentTime - compensatedTarget;
-        const absDrift = Math.abs(drift);
-        
-        let deadband = 0.050; // 50ms default deadband
-        let maxTolerance = 1.0; // 1 second default for hard seek
-        
-        if (currentMedianRTT > 200) {
-            deadband = 0.080;
-            maxTolerance = 1.5;
-        } else if (currentMedianRTT > 100) {
-            deadband = 0.060;
-            maxTolerance = 1.2;
-        }
-
-        if (absDrift > deadband) {
-            if (absDrift > maxTolerance) {
-                // Large drift: Hard seek
-                console.log(`Playback drift detected (${Math.round(drift*1000)}ms). Hard seeking to ${compensatedTarget.toFixed(3)}s`);
+        if (targetState === "PLAYING") {
+            const currentPos = audio.currentTime;
+            const drift = currentPos - compensatedTarget;
+            const absDrift = Math.abs(drift);
+            
+            // if Math.abs(drift) > 2000ms (2.0s) -> hard seek only, else do nothing
+            if (absDrift > 2.0) {
+                console.log(`Playback drift detected (${Math.round(drift * 1000)}ms). Hard seeking to ${compensatedTarget.toFixed(3)}s`);
                 audio.currentTime = compensatedTarget;
-                setTargetPlaybackRate(1.0);
-            } else {
-                // Minor drift: Perform elastic sync using target recovery window of 3 seconds
-                const recoveryTime = 3.0;
-                const rateOffset = -drift / recoveryTime;
-                const clampedOffset = Math.max(-0.015, Math.min(0.015, rateOffset));
-                const targetRate = 1.0 + clampedOffset;
-                
-                console.log(`Minor drift detected (${Math.round(drift * 1000)}ms). Adjusting target playbackRate to ${targetRate.toFixed(4)}`);
-                setTargetPlaybackRate(targetRate);
-            }
-        } else {
-            // Inside deadband: keep playbackRate at 1.0x
-            if (targetPlaybackRate !== 1.0) {
-                console.log(`Drift within deadband (${Math.round(drift * 1000)}ms). Resetting target playbackRate to 1.0`);
-                setTargetPlaybackRate(1.0);
+                if (nativePlay && auraPlugin) {
+                    auraPlugin.seek({ position: compensatedTarget }).catch(e => console.error("Native sync seek failed:", e));
+                }
             }
         }
     }
@@ -1024,7 +977,11 @@ async function runClockSync() {
             };
             
             jamSocket.addEventListener("message", tempListener);
-            jamSocket.send(JSON.stringify({ type: "ping", t0: t0 }));
+            try {
+                jamSocket.send(JSON.stringify({ type: "ping", t0: t0 }));
+            } catch (e) {
+                console.error("NTP sync ping send failed:", e);
+            }
             
             setTimeout(() => {
                 if (jamSocket) {

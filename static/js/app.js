@@ -83,6 +83,10 @@ function isNative() {
 
 const AuraPlayerPlugin = (isNative() && Capacitor.Plugins) ? Capacitor.Plugins.AuraPlayerPlugin : null;
 
+window.isPlayingNative = () => isPlayingNative;
+window.getAuraPlayerPlugin = () => AuraPlayerPlugin;
+window.isNativePlaybackPlaying = () => isNativePlaybackPlaying;
+
 // DOM Elements
 const audio = document.getElementById("audio-element");
 if (audio) {
@@ -1023,6 +1027,14 @@ function initPlayerBindings() {
     const togglePlay = () => {
         if (!currentLoadedTrack) return;
         
+        if (window.isInsideJam && window.isInsideJam()) {
+            const role = window.getJamRole ? window.getJamRole() : 'listener';
+            if (role !== 'host' && role !== 'co-host') {
+                showToast("🎵 Only Host or Co-Host can control playback in Jam");
+                return;
+            }
+        }
+        
         // Lazy init Audio Engine on first click
         window.initEqualizer(audio);
         window.resumeAudioContext();
@@ -1092,8 +1104,33 @@ function initPlayerBindings() {
         updateLyricsTimeline(audio.currentTime);
     });
 
-    // Seek bar manual seek input
-    seekbar.addEventListener("input", () => {
+    // Seek bar manual seek input (updates UI gradient fill only, checks role permission)
+    seekbar.addEventListener("input", (e) => {
+        if (window.isInsideJam && window.isInsideJam()) {
+            const role = window.getJamRole ? window.getJamRole() : 'listener';
+            if (role !== 'host' && role !== 'co-host') {
+                showToast("🎵 Only Host or Co-Host can control playback in Jam");
+                // Reset seekbar value to current position pct
+                const duration = (isNative() && isPlayingNative) ? nativeTrackDuration : audio.duration;
+                const currentPos = audio.currentTime;
+                const pct = (currentPos / duration) * 100;
+                seekbar.value = isNaN(pct) ? 0 : pct;
+                seekbar.style.background = `linear-gradient(to right, var(--gold) ${seekbar.value}%, rgba(255,255,255,0.1) ${seekbar.value}%)`;
+                return;
+            }
+        }
+        seekbar.style.background = `linear-gradient(to right, var(--gold) ${seekbar.value}%, rgba(255,255,255,0.1) ${seekbar.value}%)`;
+    });
+
+    // Seek bar manual seek release (performs seek and broadcasts changes)
+    seekbar.addEventListener("change", () => {
+        if (window.isInsideJam && window.isInsideJam()) {
+            const role = window.getJamRole ? window.getJamRole() : 'listener';
+            if (role !== 'host' && role !== 'co-host') {
+                return;
+            }
+        }
+
         if (isNative() && isPlayingNative && AuraPlayerPlugin) {
             if (nativeTrackDuration > 0) {
                 const targetPos = (seekbar.value / 100) * nativeTrackDuration;
@@ -1115,9 +1152,6 @@ function initPlayerBindings() {
         if (isNaN(audio.duration)) return;
         const targetPos = (seekbar.value / 100) * audio.duration;
         audio.currentTime = targetPos;
-        
-        // Update seekbar background gradient fill visually on manual drag
-        seekbar.style.background = `linear-gradient(to right, var(--gold) ${seekbar.value}%, rgba(255,255,255,0.1) ${seekbar.value}%)`;
         
         // Notify Jam WebSocket if in co-listening
         if (window.isInsideJam() && (window.getJamRole() === 'host' || window.getJamRole() === 'co-host')) {
