@@ -28,6 +28,9 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="AURA ∞ MUSIC API", version="1.0.0")
 
+# Simple in-memory stream URL cache: {video_id: (resolved_url, timestamp)}
+stream_url_cache = {}
+
 # 🔥 INITIALIZE LIMITER (IP Address ke hisaab se block karega)
 limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
@@ -60,8 +63,19 @@ async def api_stream(video_id: str, request: Request):
     print(f"DEBUG: Fetching stream for ID {video_id}", flush=True)
     logger.info(f"Stream request received for video_id={video_id}")
     try:
-        stream_url = get_streaming_url(video_id)
-        logger.info(f"Stream URL resolved for {video_id}: {stream_url[:80]}...")
+        now = time.time()
+        cached = stream_url_cache.get(video_id)
+        if cached and (now - cached[1] < 240):  # 240 seconds = 4 minutes
+            stream_url = cached[0]
+            logger.info(f"Stream URL resolved from cache for {video_id}: {stream_url[:80]}...")
+        else:
+            stream_url = get_streaming_url(video_id)
+            # Bounded memory cleanup: remove expired entries inline
+            expired_keys = [k for k, v in stream_url_cache.items() if now - v[1] >= 240]
+            for k in expired_keys:
+                stream_url_cache.pop(k, None)
+            stream_url_cache[video_id] = (stream_url, now)
+            logger.info(f"Stream URL resolved fresh for {video_id}: {stream_url[:80]}...")
     except Exception as e:
         logger.error(f"Stream resolution error for {video_id}: {e}")
         raise HTTPException(status_code=404, detail=f"Track streaming source not found: {e}")
