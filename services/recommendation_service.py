@@ -20,7 +20,18 @@ MOOD_QUERIES = {
     "energy": ["high energy upbeat pop", "motivational electro dance", "groovy electronic hits"],
     "focus": ["focus study lofi beats", "classical piano for concentration", "deep focus instrumental synth"],
     "melancholy": ["melancholy atmospheric indie", "introspective reflective piano", "moody ambient slow pop"],
-    "hype": ["hype aggressive trap hip hop", "high intensity rap pump up", "energetic electronic trap beats"]
+    "hype": ["hype aggressive trap hip hop", "high intensity rap pump up", "energetic electronic trap beats"],
+    "late_night": ["midnight lofi nocturnes", "dark moody ambient slow hits", "late night highway driving tracks"],
+    "morning": ["fresh optimistic morning acoustic", "sunny day wake up pop", "gentle bright morning acoustic guitar"],
+    "study": ["study session calm piano", "relaxing acoustic instrumental background", "ambient acoustic guitar study vibe"],
+    "rainy_coffee": ["rainy day cafe jazz", "cozy coffee shop jazz instrumental", "soft cafe piano and rain beats"],
+    "confidence": ["bold main character energy hits", "empowerment pop self confidence anthems", "confident upbeat rap strut music"],
+    "heartbreak": ["sad heartbreak breakup songs", "crying breakup emotional ballads", "breakup pain lofi emotional beats"],
+    "calm_anxiety": ["anxiety relief relaxing ambient", "deeply soothing slow breathing tracks", "calming slow tempo soft ambient"],
+    "lonely": ["lonely isolated introspective acoustic", "solitude late night slow indie", "lonely feeling atmospheric ambient"],
+    "sufi": ["sufi qawwali devotional hits", "mystical sufi fusion tracks", "soulful sufi love songs"],
+    "summer": ["bright summer beach pop", "breezy tropical house summer hits", "upbeat summer roadtrip playlist"],
+    "winter": ["cozy winter fireplace acoustic", "warm slow winter acoustic guitar", "chilly winter evening soft piano"]
 }
 
 AI_DJ_PHRASES = [
