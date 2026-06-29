@@ -166,6 +166,7 @@ class AuraPlaybackService : MediaSessionService() {
 
         exoPlayer?.let { player ->
             val wasPlaying = player.isPlaying
+            player.volume = 1.0f
             player.setMediaItem(mediaItem)
             player.prepare()
             player.play()
@@ -227,12 +228,22 @@ class AuraPlaybackService : MediaSessionService() {
 
     private fun setupEqualizer(sessionId: Int) {
         if (sessionId == 0) return
+        
+        // If all band gains are 0f, we don't need to initialize the equalizer effect (flat state).
+        // This avoids Android native audio thread silencing bugs on devices when equalizer is instantiated but unused.
+        val isFlat = uiBandGains.all { it == 0f }
+        if (isFlat) {
+            equalizer?.release()
+            equalizer = null
+            return
+        }
+
         try {
             equalizer?.release()
-            equalizer = Equalizer(0, sessionId).apply {
-                enabled = true
-            }
+            val eq = Equalizer(0, sessionId)
+            equalizer = eq
             applyStoredEqualizerBands()
+            eq.enabled = true
             android.util.Log.d("AuraPlayback", "Equalizer initialized successfully on audio session $sessionId")
         } catch (e: Exception) {
             android.util.Log.e("AuraPlayback", "Failed to initialize Equalizer: ${e.message}")
@@ -276,7 +287,18 @@ class AuraPlaybackService : MediaSessionService() {
     fun setEqBand(uiBandIndex: Int, gainDb: Float) {
         if (uiBandIndex in 0..9) {
             uiBandGains[uiBandIndex] = gainDb
-            applyStoredEqualizerBands()
+            val sessionId = exoPlayer?.audioSessionId ?: 0
+            if (equalizer == null && sessionId != 0) {
+                setupEqualizer(sessionId)
+            } else {
+                applyStoredEqualizerBands()
+                // If it became flat again, release it
+                val isFlat = uiBandGains.all { it == 0f }
+                if (isFlat && equalizer != null) {
+                    equalizer?.release()
+                    equalizer = null
+                }
+            }
         }
     }
 

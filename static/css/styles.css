@@ -2656,7 +2656,7 @@ input:checked + .slider-round:before {
     /* Tab panels - proper mobile padding */
     .tab-panel {
         padding: 16px 16px;
-        padding-bottom: calc(var(--mini-player-height) + var(--mobile-nav-height) + 20px);
+        padding-bottom: calc(var(--mini-player-height) + var(--mobile-nav-height) + env(safe-area-inset-bottom, 0px) + 20px);
     }
 
     /* Search box wrapper needs relative for suggestions */
@@ -2677,7 +2677,7 @@ input:checked + .slider-round:before {
         left: 0;
         top: 64px;
         padding: 16px;
-        bottom: calc(var(--mini-player-height) + var(--mobile-nav-height));
+        bottom: calc(var(--mini-player-height) + var(--mobile-nav-height) + env(safe-area-inset-bottom, 0px));
     }
 
     /* Mini player - fixed at bottom above nav bar */
@@ -2685,7 +2685,7 @@ input:checked + .slider-round:before {
         position: fixed;
         left: 8px;
         right: 8px;
-        bottom: calc(var(--mobile-nav-height) + 8px);
+        bottom: calc(var(--mobile-nav-height) + env(safe-area-inset-bottom, 0px) + 8px);
         height: var(--mini-player-height);
         border-radius: 16px;
         padding: 6px 12px;
@@ -2924,7 +2924,8 @@ input:checked + .slider-round:before {
         bottom: 0;
         left: 0;
         width: 100%;
-        height: var(--mobile-nav-height);
+        height: calc(var(--mobile-nav-height) + env(safe-area-inset-bottom, 0px));
+        box-sizing: border-box;
         background: rgba(8, 8, 12, 0.97);
         border-top: 1px solid var(--border-glass);
         backdrop-filter: blur(30px);
