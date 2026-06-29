@@ -3963,6 +3963,60 @@ moodCards.forEach(card => {
     });
 });
 
+// Desktop mouse scroll/drag support for Mood container
+const moodScroll = document.querySelector(".mood-scroll-container");
+if (moodScroll) {
+    // Convert vertical mouse-wheel scroll to horizontal scroll
+    moodScroll.addEventListener("wheel", (e) => {
+        if (e.deltaY !== 0) {
+            e.preventDefault();
+            moodScroll.scrollLeft += e.deltaY;
+        }
+    });
+
+    // Drag-to-scroll gestures
+    let isDown = false;
+    let startX;
+    let startPageX;
+    let scrollLeft;
+    let hasDragged = false;
+
+    moodScroll.addEventListener("mousedown", (e) => {
+        isDown = true;
+        hasDragged = false;
+        startPageX = e.pageX;
+        startX = e.pageX - moodScroll.offsetLeft;
+        scrollLeft = moodScroll.scrollLeft;
+        moodScroll.classList.add("dragging");
+    });
+    moodScroll.addEventListener("mouseup", () => {
+        isDown = false;
+        moodScroll.classList.remove("dragging");
+    });
+    moodScroll.addEventListener("mouseleave", () => {
+        isDown = false;
+        moodScroll.classList.remove("dragging");
+    });
+    moodScroll.addEventListener("mousemove", (e) => {
+        if (!isDown) return;
+        const x = e.pageX - moodScroll.offsetLeft;
+        const walk = (x - startX) * 1.5;
+        if (Math.abs(e.pageX - startPageX) > 6) {
+            hasDragged = true;
+        }
+        if (hasDragged) {
+            e.preventDefault();
+            moodScroll.scrollLeft = scrollLeft - walk;
+        }
+    });
+    moodScroll.addEventListener("click", (e) => {
+        if (hasDragged) {
+            e.stopImmediatePropagation();
+            e.preventDefault();
+        }
+    }, true);
+}
+
 // 15. AUXILIARY UTILITY FUNCTIONS
 
 function showToast(message) {

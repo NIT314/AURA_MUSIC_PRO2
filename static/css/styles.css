@@ -546,6 +546,11 @@ html, body {
     padding: 8px 4px;
     scroll-behavior: smooth;
     -webkit-overflow-scrolling: touch;
+    cursor: grab;
+}
+
+.mood-scroll-container.dragging {
+    cursor: grabbing;
 }
 
 /* Hide scrollbars but keep functionality */
