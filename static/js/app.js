@@ -80,6 +80,15 @@ function isNative() {
     return typeof Capacitor !== 'undefined' && Capacitor.isNativePlatform && Capacitor.isNativePlatform();
 }
 
+function getApiUrl(path) {
+    if (path.startsWith("http")) return path;
+    const base = (auraBackendUrl && auraBackendUrl.startsWith("http")) 
+                 ? auraBackendUrl.replace(/\/+$/, "") 
+                 : window.location.origin;
+    const cleanPath = path.startsWith("/") ? path : `/${path}`;
+    return `${base}${cleanPath}`;
+}
+
 const AuraPlayerPlugin = (isNative() && Capacitor.Plugins) ? Capacitor.Plugins.AuraPlayerPlugin : null;
 
 window.isPlayingNative = () => isPlayingNative;
@@ -767,7 +776,7 @@ async function fetchSuggestions(q) {
     const signal = normalSuggestionsAbortController.signal;
     
     try {
-        const res = await fetch(`/api/suggestions?q=${encodeURIComponent(q)}`, { signal });
+        const res = await fetch(getApiUrl(`/api/suggestions?q=${encodeURIComponent(q)}`), { signal });
         const suggestions = await res.json();
         if (!signal.aborted) {
             renderSuggestionsUI(suggestions);
@@ -833,7 +842,7 @@ async function performSearch(q, filter) {
     }
 
     try {
-        const url = `/api/search?q=${encodeURIComponent(q)}&filter=${filter}`;
+        const url = getApiUrl(`/api/search?q=${encodeURIComponent(q)}&filter=${filter}`);
         const res = await fetch(url);
         const results = await res.json();
         searchResultsCache = results;
@@ -1894,7 +1903,7 @@ async function playInfiniteNextTrack() {
                 skipped_tracks: skippedTracks,
                 excluded_tracks: excludedFromRecommendations
             };
-            const res = await fetch(`/api/recommendations?profile=${encodeURIComponent(JSON.stringify(profile))}`);
+            const res = await fetch(getApiUrl(`/api/recommendations?profile=${encodeURIComponent(JSON.stringify(profile))}`));
             let recommendations = await res.json();
             
             if (Array.isArray(recommendations)) {
@@ -2860,7 +2869,7 @@ function handleSpeechCommand(cmd) {
         if (query) {
             showToast(`Searching for: ${query}`);
             // Perform search and play first song
-            fetch(`/api/search?q=${encodeURIComponent(query)}&filter=songs`).then(r => r.json()).then(results => {
+            fetch(getApiUrl(`/api/search?q=${encodeURIComponent(query)}&filter=songs`)).then(r => r.json()).then(results => {
                 if (results.length > 0) {
                     playSingleSong(results[0]);
                 }
@@ -3633,7 +3642,7 @@ async function loadArtistDetailPanel(channelId) {
     panel.classList.remove("hide");
 
     try {
-        const res = await fetch(`/api/artists/${channelId}`);
+        const res = await fetch(getApiUrl(`/api/artists/${channelId}`));
         const data = await res.json();
         
         // Cache popular songs in searchResultsCache
@@ -3717,7 +3726,7 @@ async function loadAlbumDetailPanel(browseId) {
     panel.classList.remove("hide");
 
     try {
-        const res = await fetch(`/api/albums/${browseId}`);
+        const res = await fetch(getApiUrl(`/api/albums/${browseId}`));
         const data = await res.json();
         
         // Cache album tracks in searchResultsCache
@@ -3805,7 +3814,7 @@ async function loadHomeData() {
         }
 
         // Query trending
-        const trendRes = await fetch("/api/search?q=trending%20global%20hits&filter=songs");
+        const trendRes = await fetch(getApiUrl("/api/search?q=trending%20global%20hits&filter=songs"));
         const trendData = await trendRes.json();
 
         // Cache mein save karo
@@ -3835,7 +3844,7 @@ async function loadHomeData() {
         });
 
         // Query new releases
-        const newRes = await fetch("/api/search?q=latest%20music%20releases&filter=songs");
+        const newRes = await fetch(getApiUrl("/api/search?q=latest%20music%20releases&filter=songs"));
         const newData = await newRes.json();
 
         // Cache mein save karo
@@ -3910,7 +3919,7 @@ document.getElementById("start-aura-flow-btn").addEventListener("click", async (
             skipped_tracks: skippedTracks,
             excluded_tracks: excludedFromRecommendations
         };
-        const res = await fetch(`/api/recommendations?profile=${encodeURIComponent(JSON.stringify(profile))}`);
+        const res = await fetch(getApiUrl(`/api/recommendations?profile=${encodeURIComponent(JSON.stringify(profile))}`));
         let recommendations = await res.json();
         
         // Filter out excluded tracks
@@ -3965,7 +3974,7 @@ moodCards.forEach(card => {
         showToast(`Loading '${mood}' mood station tracks...`);
         
         try {
-            const res = await fetch(`/api/mood?mood=${mood}`);
+            const res = await fetch(getApiUrl(`/api/mood?mood=${mood}`));
             let tracks = await res.json();
             
             if (Array.isArray(tracks)) {
@@ -4752,7 +4761,7 @@ async function handleActionSheetAction(action) {
             }
             showToast(`Starting song radio for "${track.title}"... ⚡`);
             try {
-                const res = await fetch(`/api/recommendations?video_id=${track.id}`);
+                const res = await fetch(getApiUrl(`/api/recommendations?video_id=${track.id}`));
                 let recommendations = await res.json();
                 
                 if (Array.isArray(recommendations)) {

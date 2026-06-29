@@ -188,6 +188,7 @@ def _get_piped_stream(video_id: str) -> str:
     return None
 
 INVIDIOUS_INSTANCES = [
+    "https://iv.melmac.space",
     "https://inv.nadeko.net",
     "https://invidious.nerdvpn.de", 
     "https://invidious.privacyredirect.com",
