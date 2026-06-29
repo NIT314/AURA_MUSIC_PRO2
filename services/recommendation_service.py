@@ -31,7 +31,11 @@ MOOD_QUERIES = {
     "lonely": ["lonely isolated introspective acoustic", "solitude late night slow indie", "lonely feeling atmospheric ambient"],
     "sufi": ["sufi qawwali devotional hits", "mystical sufi fusion tracks", "soulful sufi love songs"],
     "summer": ["bright summer beach pop", "breezy tropical house summer hits", "upbeat summer roadtrip playlist"],
-    "winter": ["cozy winter fireplace acoustic", "warm slow winter acoustic guitar", "chilly winter evening soft piano"]
+    "winter": ["cozy winter fireplace acoustic", "warm slow winter acoustic guitar", "chilly winter evening soft piano"],
+    "party": ["club party dance bangers", "edm celebration house hits", "dance floor party anthems"],
+    "travel": ["highway road trip travel songs", "daytime driving travel hits", "upbeat travel wanderlust acoustic"],
+    "devotional": ["hindi devotional bhajan spiritual", "bhakti songs aarti devotional", "traditional krishna ram bhajan"],
+    "nostalgia": ["90s Bollywood retro hits", "classic 2000s Bollywood nostalgic pop", "throwback retro hindi tracks"]
 }
 
 AI_DJ_PHRASES = [
