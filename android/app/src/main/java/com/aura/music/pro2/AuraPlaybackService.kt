@@ -8,6 +8,7 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import androidx.annotation.OptIn
+import android.media.audiofx.Equalizer
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -27,6 +28,10 @@ class AuraPlaybackService : MediaSessionService() {
 
     private var exoPlayer: ExoPlayer? = null
     private var mediaSession: MediaSession? = null
+
+    // Native Equalizer support
+    private var equalizer: Equalizer? = null
+    private val uiBandGains = FloatArray(10) { 0f }
 
     // For Capacitor plugin communication
     private val binder = LocalBinder()
@@ -218,6 +223,63 @@ class AuraPlaybackService : MediaSessionService() {
         )
     }
 
+    // --- Native Equalizer Implementation ---
+
+    private fun setupEqualizer(sessionId: Int) {
+        if (sessionId == 0) return
+        try {
+            equalizer?.release()
+            equalizer = Equalizer(0, sessionId).apply {
+                enabled = true
+            }
+            applyStoredEqualizerBands()
+            android.util.Log.d("AuraPlayback", "Equalizer initialized successfully on audio session $sessionId")
+        } catch (e: Exception) {
+            android.util.Log.e("AuraPlayback", "Failed to initialize Equalizer: ${e.message}")
+        }
+    }
+
+    private fun applyStoredEqualizerBands() {
+        val eq = equalizer ?: return
+        val numBands = eq.numberOfBands.toInt()
+        if (numBands <= 0) return
+
+        val range = eq.bandLevelRange
+        val minLevel = range[0].toInt()
+        val maxLevel = range[1].toInt()
+
+        for (nativeBand in 0 until numBands) {
+            val position = if (numBands > 1) nativeBand.toFloat() / (numBands - 1).toFloat() else 0f
+            val uiIndexFloat = position * 9f
+            val lowerIndex = kotlin.math.floor(uiIndexFloat.toDouble()).toInt()
+            val upperIndex = kotlin.math.ceil(uiIndexFloat.toDouble()).toInt()
+            val fraction = uiIndexFloat - lowerIndex
+
+            val gainDb = if (lowerIndex == upperIndex) {
+                uiBandGains[lowerIndex]
+            } else {
+                uiBandGains[lowerIndex] * (1f - fraction) + uiBandGains[upperIndex] * fraction
+            }
+
+            var millibels = (gainDb * 100f).toInt()
+            if (millibels < minLevel) millibels = minLevel
+            if (millibels > maxLevel) millibels = maxLevel
+
+            try {
+                eq.setBandLevel(nativeBand.toShort(), millibels.toShort())
+            } catch (e: Exception) {
+                android.util.Log.e("AuraPlayback", "Failed to set native band $nativeBand to $millibels: ${e.message}")
+            }
+        }
+    }
+
+    fun setEqBand(uiBandIndex: Int, gainDb: Float) {
+        if (uiBandIndex in 0..9) {
+            uiBandGains[uiBandIndex] = gainDb
+            applyStoredEqualizerBands()
+        }
+    }
+
     // --- Helpers ---
 
     private fun getPositionSec(): Double {
@@ -278,6 +340,9 @@ class AuraPlaybackService : MediaSessionService() {
             } else {
                 handler.removeCallbacks(progressRunnable)
             }
+        }
+        override fun onAudioSessionIdChanged(audioSessionId: Int) {
+            setupEqualizer(audioSessionId)
         }
 
         override fun onPlayerError(error: PlaybackException) {
@@ -345,6 +410,10 @@ class AuraPlaybackService : MediaSessionService() {
             player.release()
         }
         exoPlayer = null
+        equalizer?.let {
+            it.release()
+        }
+        equalizer = null
         mediaSession?.let { session ->
             session.release()
         }
