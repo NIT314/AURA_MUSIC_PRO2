@@ -5825,30 +5825,132 @@ async function fetchFromPiped(endpoint, params = {}, timeoutMs = 5000, signal = 
     throw new Error("All Piped API instances failed.");
 }
 
+const INVIDIOUS_INSTANCES = [
+    "https://iv.melmac.space",
+    "https://invidious.flokinet.to",
+    "https://yewtu.be",
+    "https://invidious.tiekoetter.com"
+];
+
+async function fetchFromInvidious(endpoint, params = {}, timeoutMs = 6000) {
+    const urlParams = new URLSearchParams(params).toString();
+    const queryPath = urlParams ? `${endpoint}?${urlParams}` : endpoint;
+    
+    let preferredInstance = localStorage.getItem("preferred_invidious_instance");
+    let instances = [...INVIDIOUS_INSTANCES];
+    if (preferredInstance && instances.includes(preferredInstance)) {
+        instances = [preferredInstance, ...instances.filter(x => x !== preferredInstance)];
+    }
+    
+    for (const instance of instances) {
+        const url = `${instance}${queryPath}`;
+        console.log(`[INVIDIOUS-RESOLVER] Attempting: ${url}`);
+        try {
+            let data = null;
+            if (isNative() && Capacitor.Plugins && Capacitor.Plugins.CapacitorHttp) {
+                const response = await Capacitor.Plugins.CapacitorHttp.get({
+                    url: url,
+                    headers: { "Accept": "application/json" },
+                    connectTimeout: timeoutMs,
+                    readTimeout: timeoutMs
+                });
+                if (response.status === 200) {
+                    data = typeof response.data === 'string' ? JSON.parse(response.data) : response.data;
+                } else {
+                    throw new Error(`Status: ${response.status}`);
+                }
+            } else {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+                const res = await fetch(url, {
+                    signal: controller.signal,
+                    headers: { "Accept": "application/json" }
+                });
+                clearTimeout(timeoutId);
+                if (res.ok) {
+                    data = await res.json();
+                } else {
+                    throw new Error(`Status: ${res.status}`);
+                }
+            }
+            
+            if (data && (data.adaptiveFormats || data.formatStreams)) {
+                console.log(`[INVIDIOUS-RESOLVER] Success on: ${instance}`);
+                localStorage.setItem("preferred_invidious_instance", instance);
+                return data;
+            }
+        } catch (err) {
+            console.warn(`[INVIDIOUS-RESOLVER] Failed on: ${instance} - ${err.message || err}`);
+        }
+    }
+    throw new Error("All Invidious API instances failed.");
+}
+
 async function getPipedStreamUrl(videoId) {
+    // 1. Try Invidious First (Primary)
     try {
-        console.log(`[LITE-PLAYBACK] Fetching streams for: ${videoId}`);
+        console.log(`[LITE-PLAYBACK] Attempting Invidious resolution for: ${videoId}`);
+        const data = await fetchFromInvidious(`/api/v1/videos/${videoId}`, { local: "true" });
+        if (data) {
+            const adaptive = data.adaptiveFormats || [];
+            const formats = data.formatStreams || [];
+            
+            // Gather playable streams: check adaptive formats first (audio-only)
+            let audioStreams = adaptive.filter(f => f.url && (f.type || "").toLowerCase().startsWith("audio/"));
+            
+            // Fallback to formats containing audio
+            if (audioStreams.length === 0) {
+                audioStreams = formats.filter(f => f.url && !(f.videoOnly || f.type === "video/only"));
+            }
+            
+            if (audioStreams.length > 0) {
+                // Sort by bitrate descending (highest first)
+                audioStreams.sort((a, b) => {
+                    const bitrateA = parseInt(a.bitrate) || 0;
+                    const bitrateB = parseInt(b.bitrate) || 0;
+                    return bitrateB - bitrateA;
+                });
+                
+                // Prefer clean audio containers
+                const preferredMimeTypes = ["audio/mp4", "audio/webm", "audio/m4a"];
+                let bestStream = null;
+                for (const stream of audioStreams) {
+                    const mime = (stream.type || "").toLowerCase();
+                    if (preferredMimeTypes.some(pref => mime.includes(pref))) {
+                        bestStream = stream;
+                        break;
+                    }
+                }
+                if (!bestStream) bestStream = audioStreams[0];
+                console.log(`[LITE-PLAYBACK] Invidious stream selected: ${bestStream.type || "unknown"} (${bestStream.bitrate || "unknown"} bps)`);
+                return bestStream.url;
+            }
+        }
+    } catch (err) {
+        console.warn(`[LITE-PLAYBACK] Invidious resolution failed, falling back to Piped rotator. Details:`, err);
+    }
+    
+    // 2. Fallback to original Piped Rotator (Secondary)
+    try {
+        console.log(`[LITE-PLAYBACK] Attempting Piped fallback for: ${videoId}`);
         const data = await fetchFromPiped(`/streams/${videoId}`);
         if (!data || !data.audioStreams || !Array.isArray(data.audioStreams) || data.audioStreams.length === 0) {
             console.warn(`[LITE-PLAYBACK] No audio streams found in Piped response for: ${videoId}`);
             return null;
         }
 
-        // Filter out empty URLs
         const audioStreams = data.audioStreams.filter(stream => stream.url);
         if (audioStreams.length === 0) {
-            console.warn(`[LITE-PLAYBACK] No valid audio stream URLs for: ${videoId}`);
+            console.warn(`[LITE-PLAYBACK] No valid audio stream URLs in Piped response for: ${videoId}`);
             return null;
         }
 
-        // Sort by bitrate descending (highest quality first)
         audioStreams.sort((a, b) => {
             const bitrateA = parseInt(a.bitrate) || 0;
             const bitrateB = parseInt(b.bitrate) || 0;
             return bitrateB - bitrateA;
         });
 
-        // Try to select highest bitrate with preferred formats
         const preferredMimeTypes = ["audio/mp4", "audio/webm", "audio/m4a"];
         let bestStream = null;
         for (const stream of audioStreams) {
@@ -5861,7 +5963,7 @@ async function getPipedStreamUrl(videoId) {
         if (!bestStream) bestStream = audioStreams[0];
         return bestStream.url;
     } catch (err) {
-        console.warn(`[LITE-PLAYBACK] Error fetching Piped stream URL for: ${videoId}:`, err);
+        console.warn(`[LITE-PLAYBACK] Error fetching Piped fallback stream URL for: ${videoId}:`, err);
         return null;
     }
 }
