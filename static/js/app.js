@@ -1622,9 +1622,22 @@ async function playSingleSong(track, autoplay = true, fromJamSync = false, keepI
                 showToast("Playing Offline Saved Audio 📶");
             } else {
                 // Online stream proxy
+                let streamUrl;
                 if (auraMode === "lite" && !(window.isInsideJam && window.isInsideJam())) {
-                    showToast("Pro Mode Server connection required to stream this song.");
-                    return;
+                    showToast("Resolving stream from Piped API... 🔄");
+                    const pipedUrl = await getPipedStreamUrl(track.id);
+                    // Anti-skip check (race condition guard)
+                    if (currentLoadedTrack !== track) {
+                        console.log(`[LITE-PLAYBACK] Playback aborted for ${track.title} - track changed during resolution.`);
+                        return;
+                    }
+                    if (!pipedUrl) {
+                        showToast("Failed to resolve stream from Piped API. Pro Mode required.");
+                        return;
+                    }
+                    streamUrl = pipedUrl;
+                } else {
+                    streamUrl = `${auraBackendUrl}/api/stream?video_id=${track.id}`;
                 }
                 
                 if (isNative() && AuraPlayerPlugin) {
@@ -1634,7 +1647,6 @@ async function playSingleSong(track, autoplay = true, fromJamSync = false, keepI
                     audio.src = "";
                     audio.load();
                     
-                    const streamUrl = `${auraBackendUrl}/api/stream?video_id=${track.id}`;
                     const artworkUrl = track.thumbnail || '';
                     
                     AuraPlayerPlugin.play({
@@ -1653,10 +1665,14 @@ async function playSingleSong(track, autoplay = true, fromJamSync = false, keepI
                     return; // Early return to bypass HTML5 audio.load() and autoplay block below
                 } else {
                     isPlayingNative = false;
-                    const baseUrl = (auraBackendUrl && auraBackendUrl.startsWith("http")) 
-                                    ? auraBackendUrl 
-                                    : window.location.origin; // Fallback to page origin for Jam listeners
-                    audio.src = `${baseUrl}/api/stream?video_id=${track.id}`;
+                    if (auraMode === "lite" && !(window.isInsideJam && window.isInsideJam())) {
+                        audio.src = streamUrl;
+                    } else {
+                        const baseUrl = (auraBackendUrl && auraBackendUrl.startsWith("http")) 
+                                        ? auraBackendUrl 
+                                        : window.location.origin; // Fallback to page origin for Jam listeners
+                        audio.src = `${baseUrl}/api/stream?video_id=${track.id}`;
+                    }
                 }
             }
         }
