@@ -3912,9 +3912,13 @@ document.getElementById("start-aura-flow-btn").addEventListener("click", async (
 });
 
 // Mood Station click triggers
-const moodCards = document.querySelectorAll(".mood-card");
+const moodCards = document.querySelectorAll(".mood-pill");
 moodCards.forEach(card => {
     card.addEventListener("click", async () => {
+        // Toggle active visual class
+        document.querySelectorAll(".mood-pill").forEach(p => p.classList.remove("active"));
+        card.classList.add("active");
+
         const mood = card.getAttribute("data-mood");
         showToast(`Loading '${mood}' mood station tracks...`);
         
