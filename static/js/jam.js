@@ -1060,20 +1060,6 @@ async function runClockSync() {
         clockOffset = avgOffset;
         currentMedianRTT = samples[0].rtt;
         console.log(`Clock sync: offset=${Math.round(clockOffset)}ms. RTT median=${Math.round(samples[0].rtt)}ms.`);
-        
-        // Trigger a sync alignment check once the initial clock offset is resolved!
-        if (currentJamRoomState && currentUserRole !== "host") {
-            const state = currentJamRoomState;
-            if (state.playback.current_track && state.playback.current_track.id) {
-                syncLocalPlayback({
-                    video_id: state.playback.current_track.id,
-                    state: state.playback.state,
-                    position: state.playback.position,
-                    track: state.playback.current_track,
-                    server_time: Date.now() + clockOffset
-                });
-            }
-        }
     }
 }
 
