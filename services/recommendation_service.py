@@ -15,7 +15,12 @@ MOOD_QUERIES = {
     "workout": ["gym workout phonk motivation", "high energy workout playlist", "edm workout beat"],
     "sleep": ["lofi sleep music", "deep sleep ambient rainfall", "peaceful sleep piano"],
     "romantic": ["romantic hindi love songs", "acoustic romantic ballads", "slow pop love hits"],
-    "rain": ["rainy day chill music", "lofi rain sounds", "acoustic rainy day"]
+    "rain": ["rainy day chill music", "lofi rain sounds", "acoustic rainy day"],
+    "chill": ["chill lofi beats", "relaxed acoustic soft pop", "calm ambient lounge vibes"],
+    "energy": ["high energy upbeat pop", "motivational electro dance", "groovy electronic hits"],
+    "focus": ["focus study lofi beats", "classical piano for concentration", "deep focus instrumental synth"],
+    "melancholy": ["melancholy atmospheric indie", "introspective reflective piano", "moody ambient slow pop"],
+    "hype": ["hype aggressive trap hip hop", "high intensity rap pump up", "energetic electronic trap beats"]
 }
 
 AI_DJ_PHRASES = [
