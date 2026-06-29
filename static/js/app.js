@@ -5809,6 +5809,47 @@ async function fetchFromPiped(endpoint, params = {}, timeoutMs = 5000, signal = 
     throw new Error("All Piped API instances failed.");
 }
 
+async function getPipedStreamUrl(videoId) {
+    try {
+        console.log(`[LITE-PLAYBACK] Fetching streams for: ${videoId}`);
+        const data = await fetchFromPiped(`/streams/${videoId}`);
+        if (!data || !data.audioStreams || !Array.isArray(data.audioStreams) || data.audioStreams.length === 0) {
+            console.warn(`[LITE-PLAYBACK] No audio streams found in Piped response for: ${videoId}`);
+            return null;
+        }
+
+        // Filter out empty URLs
+        const audioStreams = data.audioStreams.filter(stream => stream.url);
+        if (audioStreams.length === 0) {
+            console.warn(`[LITE-PLAYBACK] No valid audio stream URLs for: ${videoId}`);
+            return null;
+        }
+
+        // Sort by bitrate descending (highest quality first)
+        audioStreams.sort((a, b) => {
+            const bitrateA = parseInt(a.bitrate) || 0;
+            const bitrateB = parseInt(b.bitrate) || 0;
+            return bitrateB - bitrateA;
+        });
+
+        // Try to select highest bitrate with preferred formats
+        const preferredMimeTypes = ["audio/mp4", "audio/webm", "audio/m4a"];
+        let bestStream = null;
+        for (const stream of audioStreams) {
+            const mime = (stream.mimeType || "").toLowerCase();
+            if (preferredMimeTypes.some(pref => mime.includes(pref))) {
+                bestStream = stream;
+                break;
+            }
+        }
+        if (!bestStream) bestStream = audioStreams[0];
+        return bestStream.url;
+    } catch (err) {
+        console.warn(`[LITE-PLAYBACK] Error fetching Piped stream URL for: ${videoId}:`, err);
+        return null;
+    }
+}
+
 function mapPipedItem(item) {
     let videoId = "";
     if (item.videoId) {
