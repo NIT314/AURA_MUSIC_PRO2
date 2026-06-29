@@ -97,6 +97,9 @@ async def api_stream(video_id: str, request: Request):
         response_headers = {
             "Content-Type": response_stream.headers.get("content-type", "audio/mpeg"),
             "Accept-Ranges": "bytes",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Headers": "*",
+            "Access-Control-Allow-Methods": "*"
         }
         
         if "content-range" in response_stream.headers:

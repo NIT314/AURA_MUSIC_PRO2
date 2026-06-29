@@ -121,6 +121,7 @@ function syncNativeEqualizer() {
 // DOM Elements
 const audio = document.getElementById("audio-element");
 if (audio) {
+    audio.crossOrigin = "anonymous";
     audio.preservesPitch = true;
     audio.mozPreservesPitch = true;
     audio.webkitPreservesPitch = true;
