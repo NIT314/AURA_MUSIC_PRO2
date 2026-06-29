@@ -89,10 +89,20 @@ function getApiUrl(path) {
     return `${base}${cleanPath}`;
 }
 
-const AuraPlayerPlugin = (isNative() && Capacitor.Plugins) ? Capacitor.Plugins.AuraPlayerPlugin : null;
+// Resolve AuraPlayerPlugin dynamically to prevent Capacitor race conditions during initialization
+Object.defineProperty(window, 'AuraPlayerPlugin', {
+    get: function() {
+        if (isNative() && typeof Capacitor !== 'undefined' && Capacitor.Plugins) {
+            return Capacitor.Plugins.AuraPlayerPlugin || null;
+        }
+        return null;
+    },
+    configurable: true,
+    enumerable: true
+});
 
 window.isPlayingNative = () => isPlayingNative;
-window.getAuraPlayerPlugin = () => AuraPlayerPlugin;
+window.getAuraPlayerPlugin = () => window.AuraPlayerPlugin;
 window.isNativePlaybackPlaying = () => isNativePlaybackPlaying;
 
 function syncNativeEqualizer() {
