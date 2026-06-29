@@ -86,6 +86,19 @@ window.isPlayingNative = () => isPlayingNative;
 window.getAuraPlayerPlugin = () => AuraPlayerPlugin;
 window.isNativePlaybackPlaying = () => isNativePlaybackPlaying;
 
+function syncNativeEqualizer() {
+    if (isNative() && AuraPlayerPlugin) {
+        const sliders = document.querySelectorAll(".eq-slider");
+        sliders.forEach(slider => {
+            const index = parseInt(slider.getAttribute("data-index"));
+            const val = parseFloat(slider.value);
+            AuraPlayerPlugin.setEqBand({ bandIndex: index, gainDb: val }).catch(err => {
+                console.error("Failed to sync native EQ band on play:", index, err);
+            });
+        });
+    }
+}
+
 // DOM Elements
 const audio = document.getElementById("audio-element");
 if (audio) {
@@ -1632,6 +1645,7 @@ async function playSingleSong(track, autoplay = true, fromJamSync = false, keepI
                         trackId: track.id
                     }).then(() => {
                         console.log("Native player playing:", track.title);
+                        syncNativeEqualizer();
                     }).catch(err => {
                         console.error("Native play failed:", err);
                         showToast("Failed to play natively");
@@ -3178,12 +3192,19 @@ function initSoundStageUI() {
     sliders.forEach(slider => {
         slider.addEventListener("input", () => {
             const index = slider.getAttribute("data-index");
-            const val = slider.value;
+            const val = parseFloat(slider.value);
             window.setBandGain(index, val);
             
             // Set preset button Custom active
             document.querySelectorAll(".preset-btn").forEach(b => b.classList.remove("active"));
             document.querySelector(".preset-btn[data-preset='custom']").classList.add("active");
+
+            // Native Equalizer sync
+            if (isNative() && isPlayingNative && AuraPlayerPlugin) {
+                AuraPlayerPlugin.setEqBand({ bandIndex: parseInt(index), gainDb: val }).catch(err => {
+                    console.error("Failed to set native EQ band:", index, err);
+                });
+            }
         });
     });
 
@@ -3226,6 +3247,11 @@ window.updateEQSliderUI = (bandIndex, dbValue) => {
     const slider = document.querySelector(`.eq-slider[data-index="${bandIndex}"]`);
     if (slider) {
         slider.value = dbValue;
+    }
+    if (isNative() && isPlayingNative && AuraPlayerPlugin) {
+        AuraPlayerPlugin.setEqBand({ bandIndex: parseInt(bandIndex), gainDb: parseFloat(dbValue) }).catch(err => {
+            console.error("Failed to update native EQ preset band:", bandIndex, err);
+        });
     }
 };
 

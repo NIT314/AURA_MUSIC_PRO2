@@ -158,6 +158,24 @@ class AuraPlayerPlugin : Plugin() {
         }
     }
 
+    @PluginMethod
+    fun setEqBand(call: PluginCall) {
+        val bandIndex = call.getInt("bandIndex")
+        val gainDb = call.getDouble("gainDb")?.toFloat()
+
+        if (bandIndex == null || gainDb == null) {
+            call.reject("Missing required parameters: bandIndex, gainDb")
+            return
+        }
+
+        if (isBound && playbackService != null) {
+            playbackService?.setEqBand(bandIndex, gainDb)
+            call.resolve()
+        } else {
+            call.reject("Playback service not bound")
+        }
+    }
+
     override fun handleOnDestroy() {
         if (isBound) {
             context.unbindService(serviceConnection)
