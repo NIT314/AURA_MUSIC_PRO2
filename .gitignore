@@ -35,5 +35,26 @@ s t a t i c / T h u m b n a i l - T e c h - A p p l e - P a y _ 2 x . p n g
  c o o k i e s . t x t  
  
 # Android and Capacitor builds/dependencies
-android/
+android/*
+!android/app/
+android/app/*
+!android/app/build.gradle
+!android/app/src/
+android/app/src/*
+!android/app/src/main/
+android/app/src/main/*
+!android/app/src/main/AndroidManifest.xml
+!android/app/src/main/java/
+android/app/src/main/java/*
+!android/app/src/main/java/com/
+android/app/src/main/java/com/*
+!android/app/src/main/java/com/aura/
+android/app/src/main/java/com/aura/*
+!android/app/src/main/java/com/aura/music/
+android/app/src/main/java/com/aura/music/*
+!android/app/src/main/java/com/aura/music/pro2/
+android/app/src/main/java/com/aura/music/pro2/*
+!android/app/src/main/java/com/aura/music/pro2/AuraPlaybackService.kt
+!android/app/src/main/java/com/aura/music/pro2/AuraPlayerPlugin.kt
+!android/app/src/main/java/com/aura/music/pro2/MainActivity.java
 node_modules/
