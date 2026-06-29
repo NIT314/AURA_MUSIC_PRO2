@@ -285,15 +285,6 @@ function sendJamAddQueue(song) {
     }));
 }
 
-function sendJamVoteQueue(songId, vote) {
-    if (!jamSocket || jamSocket.readyState !== WebSocket.OPEN) return;
-    jamSocket.send(JSON.stringify({
-        type: "vote_queue",
-        song_id: songId,
-        vote: parseInt(vote)
-    }));
-}
-
 function sendJamRemoveQueue(songId) {
     if (!jamSocket || jamSocket.readyState !== WebSocket.OPEN) return;
     jamSocket.send(JSON.stringify({
@@ -1115,7 +1106,6 @@ window.connectJamRoom = connectJamRoom;
 window.leaveJamRoom = leaveJamRoom;
 window.sendJamPlaybackUpdate = sendJamPlaybackUpdate;
 window.sendJamAddQueue = sendJamAddQueue;
-window.sendJamVoteQueue = sendJamVoteQueue;
 window.sendJamRemoveQueue = sendJamRemoveQueue;
 window.sendJamReorderQueue = sendJamReorderQueue;
 window.sendJamSkipToNext = sendJamSkipToNext;

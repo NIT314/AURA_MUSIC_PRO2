@@ -38,11 +38,11 @@ class JamRoom:
         if role == "host":
             return True
         if role == "co-host":
-            return action in ["control_playback", "add_queue", "vote_queue", "remove_queue"]
+            return action in ["control_playback", "add_queue", "remove_queue"]
         if role == "moderator":
-            return action in ["add_queue", "vote_queue", "remove_queue"]
+            return action in ["add_queue", "remove_queue"]
         if role == "contributor":
-            return action in ["add_queue", "vote_queue"]
+            return action in ["add_queue"]
         if role == "listener":
             if self.add_only_mode:
                 return action == "add_queue"
@@ -264,27 +264,12 @@ class JamRoom:
             "thumbnail": song.get("thumbnail", ""),
             "duration": song.get("duration", ""),
             "durationSeconds": song.get("durationSeconds", 0),
-            "votes": {username: 1},
             "submitted_by": username
         }
         self.queue.append(queue_item)
         await self.add_chat_msg("System", f"{username} added '{song['title']}' to queue.", msg_type="system")
         await self.broadcast_state()
 
-    async def vote_song(self, username: str, song_id: str, vote: int):
-        if not self.has_permission(username, "vote_queue"):
-            return
-        for item in self.queue:
-            if item["id"] == song_id:
-                if vote == 0:
-                    if username in item["votes"]:
-                        del item["votes"][username]
-                else:
-                    item["votes"][username] = vote
-                break
-        if not self.manual_order:
-            self.sort_queue()
-        await self.broadcast_state()
 
     async def remove_from_queue(self, username: str, song_id: str):
         if not self.has_permission(username, "remove_queue"):
@@ -302,27 +287,6 @@ class JamRoom:
             self.manual_order = False
         await self.broadcast_state()
 
-    def sort_queue(self):
-        if not self.queue:
-            return
-        current_id = self.current_track.get("id") if self.current_track else None
-        current_idx = -1
-        if current_id:
-            for idx, item in enumerate(self.queue):
-                if item["id"] == current_id:
-                    current_idx = idx
-                    break
-        if current_idx == -1:
-            def get_net_votes(item):
-                return sum(item["votes"].values())
-            self.queue.sort(key=get_net_votes, reverse=True)
-        else:
-            played = self.queue[:current_idx + 1]
-            upcoming = self.queue[current_idx + 1:]
-            def get_net_votes(item):
-                return sum(item["votes"].values())
-            upcoming.sort(key=get_net_votes, reverse=True)
-            self.queue = played + upcoming
 
     async def reorder_queue(self, username: str, queue_ids: List[str]):
         if not self.has_permission(username, "control_playback"):
@@ -482,7 +446,6 @@ class JamRoom:
     def get_room_state_dict(self):
         serialized_queue = []
         for item in self.queue:
-            net_votes = sum(item["votes"].values())
             serialized_queue.append({
                 "id": item["id"],
                 "title": item["title"],
@@ -490,8 +453,6 @@ class JamRoom:
                 "thumbnail": item["thumbnail"],
                 "duration": item["duration"],
                 "durationSeconds": item["durationSeconds"],
-                "net_votes": net_votes,
-                "votes": item["votes"],
                 "submitted_by": item["submitted_by"]
             })
         users_list = []

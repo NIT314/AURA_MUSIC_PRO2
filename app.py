@@ -186,10 +186,6 @@ async def jam_websocket_handler(websocket: WebSocket, room_code: str, username: 
                 song = data.get("song")
                 if song:
                     await room.add_to_queue(username, song)
-            elif msg_type == "vote_queue":
-                song_id = data.get("song_id")
-                vote = data.get("vote", 0)
-                await room.vote_song(username, song_id, vote)
             elif msg_type == "remove_queue":
                 song_id = data.get("song_id")
                 await room.remove_from_queue(username, song_id)
