@@ -1988,6 +1988,20 @@ input:checked + .slider-round:before {
     height: 28px;
 }
 
+.btn-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+}
+
+.admin-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+}
+
 .input-checkbox {
     display: flex;
     align-items: center;

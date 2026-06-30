@@ -34,7 +34,13 @@ window.AuraUniversalLink = {
         if (pasteBtn) {
             pasteBtn.addEventListener("click", async () => {
                 try {
-                    const clipboardText = await navigator.clipboard.readText();
+                    let clipboardText = "";
+                    if (window.isNative && window.isNative() && typeof Capacitor !== 'undefined' && Capacitor.Plugins && Capacitor.Plugins.Clipboard) {
+                        const result = await Capacitor.Plugins.Clipboard.read();
+                        clipboardText = result.value || "";
+                    } else {
+                        clipboardText = await navigator.clipboard.readText();
+                    }
                     if (clipboardText) {
                         input.value = clipboardText.trim();
                         showToast("Pasted from clipboard!");
@@ -42,6 +48,7 @@ window.AuraUniversalLink = {
                         showToast("Clipboard is empty.");
                     }
                 } catch (e) {
+                    console.error("Paste Clipboard error:", e);
                     showToast("Clipboard permission denied.");
                 }
             });
