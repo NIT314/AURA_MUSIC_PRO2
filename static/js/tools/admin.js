@@ -390,30 +390,47 @@ window.AuraAdmin = {
                     this.showBroadcastForm(b);
                 });
 
-                row.querySelector(".delete-btn").addEventListener("click", async () => {
-                    if (confirm(`Delete broadcast: "${b.title}"?`)) {
-                        try {
-                            const delRes = await fetch(`${backendUrl}/api/admin/broadcasts/${b.id}`, {
-                                method: "DELETE",
-                                headers: { "Authorization": `Bearer ${this.adminToken}` }
-                            });
-                            if (delRes.ok) {
-                                showToast("Deleted successfully.");
-                                this.loadAdminBroadcastsList();
-                                if (window.AuraBroadcast) window.AuraBroadcast.fetchBroadcasts();
-                            } else {
-                                showToast("Failed to delete.");
+                row.querySelector(".delete-btn").addEventListener("click", () => {
+                    window.showAuraConfirm(
+                        "Delete Broadcast",
+                        `Are you sure you want to delete this broadcast bulletin: "${b.title}"?`,
+                        async () => {
+                            try {
+                                const delRes = await fetch(`${backendUrl}/api/admin/broadcasts/${b.id}`, {
+                                    method: "DELETE",
+                                    headers: { "Authorization": `Bearer ${this.adminToken}` }
+                                });
+                                if (delRes.ok) {
+                                    showToast("Deleted successfully.");
+                                    this.loadAdminBroadcastsList();
+                                    if (window.AuraBroadcast) window.AuraBroadcast.fetchBroadcasts();
+                                } else {
+                                    showToast("Failed to delete.");
+                                }
+                            } catch (err) {
+                                showToast("Error deleting item.");
                             }
-                        } catch (err) {
-                            showToast("Error deleting item.");
                         }
-                    }
+                    );
                 });
 
                 container.appendChild(row);
             });
         } catch (e) {
             container.innerHTML = `<p class="error-text">Failed to fetch list.</p>`;
+        }
+    },
+
+    togglePasswordVisibility(id, btn) {
+        const input = document.getElementById(id);
+        if (!input) return;
+        const isPassword = input.type === "password";
+        if (isPassword) {
+            input.type = "text";
+            btn.innerHTML = `<i class="fa-solid fa-eye-slash"></i>`;
+        } else {
+            input.type = "password";
+            btn.innerHTML = `<i class="fa-solid fa-eye"></i>`;
         }
     }
 };

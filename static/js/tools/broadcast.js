@@ -6,6 +6,9 @@
 window.AuraBroadcast = {
     init() {
         this.fetchBroadcasts();
+        window.addEventListener("aura-mode-change", () => {
+            this.fetchBroadcasts();
+        });
     },
 
     async fetchBroadcasts() {
@@ -81,25 +84,29 @@ window.AuraBroadcast = {
                 // Hook button listeners
                 const useBtn = card.querySelector(".use-backend-btn");
                 if (useBtn) {
-                    useBtn.addEventListener("click", async () => {
+                    useBtn.addEventListener("click", () => {
                         const targetUrl = useBtn.dataset.url;
-                        if (confirm(`Do you want to switch your backend connection to:\n${targetUrl}?`)) {
-                            try {
-                                const normalizedUrl = await window.saveBackendUrl(targetUrl);
-                                const isAlive = await window.checkBackendHealth();
-                                if (isAlive) {
-                                    window.setMode("pro");
-                                    showToast("Switched backend successfully! Pro Mode active ⚡");
-                                } else {
-                                    window.setMode("lite");
-                                    showToast("Backend switched, but host is offline.");
+                        window.showAuraConfirm(
+                            "Switch Backend URL",
+                            `Do you want to switch your backend connection to:\n${targetUrl}?`,
+                            async () => {
+                                try {
+                                    const normalizedUrl = await window.saveBackendUrl(targetUrl);
+                                    const isAlive = await window.checkBackendHealth();
+                                    if (isAlive) {
+                                        window.setMode("pro");
+                                        showToast("Switched backend successfully! Pro Mode active ⚡");
+                                    } else {
+                                        window.setMode("lite");
+                                        showToast("Backend switched, but host is offline.");
+                                    }
+                                    if (window.AuraBackend) window.AuraBackend.updateUI();
+                                    this.fetchBroadcasts();
+                                } catch (err) {
+                                    showToast("Failed to switch backend URL.");
                                 }
-                                if (window.AuraBackend) window.AuraBackend.updateUI();
-                                this.fetchBroadcasts(); // Reload list from the new backend
-                            } catch (err) {
-                                showToast("Failed to switch backend URL.");
                             }
-                        }
+                        );
                     });
                 }
 

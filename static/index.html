@@ -753,8 +753,9 @@
                                 <div class="input-group">
                                     <input type="text" id="admin-username" placeholder="Username" class="glass-input">
                                 </div>
-                                <div class="input-group">
+                                <div class="input-group password-input-wrapper">
                                     <input type="password" id="admin-password" placeholder="Password" class="glass-input">
+                                    <button type="button" class="password-toggle-btn" onclick="AuraAdmin.togglePasswordVisibility('admin-password', this)"><i class="fa-solid fa-eye"></i></button>
                                 </div>
                                 <div class="btn-row">
                                     <button class="btn btn-purple" id="admin-login-btn"><i class="fa-solid fa-right-to-bracket"></i> Login</button>
@@ -771,8 +772,9 @@
                                 <!-- Change Password Section -->
                                 <div id="admin-change-password-section" class="hide form-section">
                                     <h4>Change Admin Password</h4>
-                                    <div class="input-group">
+                                    <div class="input-group password-input-wrapper">
                                         <input type="password" id="admin-new-password" placeholder="New Password" class="glass-input">
+                                        <button type="button" class="password-toggle-btn" onclick="AuraAdmin.togglePasswordVisibility('admin-new-password', this)"><i class="fa-solid fa-eye"></i></button>
                                     </div>
                                     <div class="btn-row">
                                         <button class="btn btn-purple" id="admin-save-pass-btn">Save Password</button>
@@ -1259,6 +1261,23 @@
                         <button class="text-btn danger" id="disconnect-backend-btn"><i class="fa-solid fa-link-slash"></i> Disconnect</button>
                     </div>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Dynamic Premium Dialog Modal -->
+    <div id="aura-dialog-modal" class="modal-overlay hide">
+        <div class="modal-card glass-card animate-zoom">
+            <div class="modal-header">
+                <h3 id="aura-dialog-title">Confirm Action</h3>
+                <button class="icon-btn" id="aura-dialog-close-btn"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body">
+                <p id="aura-dialog-message">Are you sure you want to perform this action?</p>
+            </div>
+            <div class="modal-footer btn-row">
+                <button class="btn btn-border" id="aura-dialog-cancel-btn">Cancel</button>
+                <button class="btn btn-purple" id="aura-dialog-confirm-btn">Confirm</button>
             </div>
         </div>
     </div>
