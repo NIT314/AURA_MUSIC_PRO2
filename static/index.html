@@ -54,8 +54,8 @@
                 <button class="nav-btn" data-tab="equalizer">
                     <i class="fa-solid fa-sliders"></i> <span>Equalizer</span>
                 </button>
-                <button class="nav-btn" data-tab="stats">
-                    <i class="fa-solid fa-chart-simple"></i> <span>Stats</span>
+                <button class="nav-btn" data-tab="tools">
+                    <i class="fa-solid fa-screwdriver-wrench"></i> <span>Tools</span>
                 </button>
             </nav>
             <div class="sidebar-footer">
@@ -684,54 +684,199 @@
                 </div>
             </section>
 
-            <!-- TAB 6: STATISTICS PANEL -->
-            <section id="tab-stats" class="tab-panel">
-                <div class="stats-grid">
-                    <!-- General metrics card -->
-                    <div class="metric-card glass-card">
-                        <div class="metric-icon"><i class="fa-solid fa-clock"></i></div>
-                        <div class="metric-data">
-                            <h2 id="stats-total-time">0</h2>
-                            <p>Listening Minutes</p>
-                        </div>
-                    </div>
+            <!-- TAB 6: TOOLS PANEL -->
+            <section id="tab-tools" class="tab-panel">
+                <div class="tools-layout">
                     
-                    <div class="metric-card glass-card">
-                        <div class="metric-icon"><i class="fa-solid fa-star"></i></div>
-                        <div class="metric-data">
-                            <h2 id="stats-top-artist">None</h2>
-                            <p>Top Artist</p>
+                    <!-- Section 1: Backend Connection Manager -->
+                    <div class="tools-card glass-card" id="card-backend-connection">
+                        <div class="card-header">
+                            <i class="fa-solid fa-server"></i>
+                            <h3>Backend Connection</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="connection-status-wrapper">
+                                <span class="status-indicator offline" id="backend-health-indicator"></span>
+                                <span id="backend-status-text">Disconnected</span>
+                            </div>
+                            <div class="input-group">
+                                <input type="text" id="backend-url-input" placeholder="Paste backend URL (e.g., https://...)" class="glass-input">
+                            </div>
+                            <div class="btn-row">
+                                <button class="btn btn-purple" id="backend-save-btn"><i class="fa-solid fa-floppy-disk"></i> Save</button>
+                                <button class="btn btn-border" id="backend-copy-btn"><i class="fa-solid fa-copy"></i> Copy</button>
+                                <button class="btn btn-border" id="backend-check-btn"><i class="fa-solid fa-circle-check"></i> Check Status</button>
+                            </div>
                         </div>
                     </div>
 
-                    <div class="metric-card glass-card">
-                        <div class="metric-icon"><i class="fa-solid fa-music"></i></div>
-                        <div class="metric-data">
-                            <h2 id="stats-songs-played">0</h2>
-                            <p>Tracks Listened</p>
+                    <!-- Section 2: Universal Link Player -->
+                    <div class="tools-card glass-card" id="card-universal-player">
+                        <div class="card-header">
+                            <i class="fa-solid fa-wand-magic-sparkles"></i>
+                            <h3>Universal Link Player</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="input-group">
+                                <textarea id="universal-link-input" placeholder="Paste YouTube, Spotify, SoundCloud, direct audio/m3u8 streams, or search term..." class="glass-textarea" rows="2"></textarea>
+                            </div>
+                            <div class="btn-row">
+                                <button class="btn btn-purple" id="universal-play-btn"><i class="fa-solid fa-play"></i> Resolve & Play</button>
+                                <button class="btn btn-border" id="universal-paste-btn"><i class="fa-solid fa-paste"></i> Paste Clipboard</button>
+                            </div>
                         </div>
                     </div>
-                </div>
 
-                <!-- History Chart / Graph (Simulated Canvas/SVG bars) -->
-                <div class="chart-container glass-card">
-                    <h3>Weekly Rhythm Graph</h3>
-                    <div class="weekly-bars" id="weekly-bars-container">
-                        <div class="bar-column"><div class="bar-fill" style="height: 10%;"></div><span>Mon</span></div>
-                        <div class="bar-column"><div class="bar-fill" style="height: 45%;"></div><span>Tue</span></div>
-                        <div class="bar-column"><div class="bar-fill" style="height: 30%;"></div><span>Wed</span></div>
-                        <div class="bar-column"><div class="bar-fill" style="height: 80%;"></div><span>Thu</span></div>
-                        <div class="bar-column"><div class="bar-fill" style="height: 55%;"></div><span>Fri</span></div>
-                        <div class="bar-column"><div class="bar-fill" style="height: 95%;"></div><span>Sat</span></div>
-                        <div class="bar-column"><div class="bar-fill" style="height: 70%;"></div><span>Sun</span></div>
+                    <!-- Section 3: Broadcast Center -->
+                    <div class="tools-card glass-card" id="card-broadcast-center">
+                        <div class="card-header">
+                            <i class="fa-solid fa-bullhorn"></i>
+                            <h3>Broadcast Bulletins</h3>
+                        </div>
+                        <div class="card-body" id="broadcasts-container">
+                            <div class="loading-state">
+                                <i class="fa-solid fa-spinner fa-spin"></i> Loading broadcasts...
+                            </div>
+                        </div>
                     </div>
-                </div>
 
-                <!-- Custom Profile / Privacy Control Card -->
-                <div class="privacy-control-card glass-card">
-                    <h3>Private Listening Mode</h3>
-                    <p>Enabling Incognito blocks history writing, download tracking, and AI suggestion profiling.</p>
-                    <button class="btn btn-purple" id="stats-incognito-btn"><i class="fa-solid fa-eye-slash"></i> Turn On Incognito</button>
+                    <!-- Section 4: Admin Portal -->
+                    <div class="tools-card glass-card" id="card-admin-portal">
+                        <div class="card-header collapse-trigger" id="admin-panel-trigger">
+                            <i class="fa-solid fa-user-shield"></i>
+                            <h3>Admin Panel</h3>
+                            <i class="fa-solid fa-chevron-down collapse-icon"></i>
+                        </div>
+                        <div class="card-body collapse-content hide" id="admin-panel-content">
+                            <!-- Logged Out Mode -->
+                            <div id="admin-logged-out">
+                                <div class="input-group">
+                                    <input type="text" id="admin-username" placeholder="Username" class="glass-input">
+                                </div>
+                                <div class="input-group">
+                                    <input type="password" id="admin-password" placeholder="Password" class="glass-input">
+                                </div>
+                                <div class="btn-row">
+                                    <button class="btn btn-purple" id="admin-login-btn"><i class="fa-solid fa-right-to-bracket"></i> Login</button>
+                                </div>
+                            </div>
+                            <!-- Logged In Mode -->
+                            <div id="admin-logged-in" class="hide">
+                                <div class="admin-actions">
+                                    <button class="btn btn-purple" id="admin-create-broadcast-btn"><i class="fa-solid fa-plus"></i> New Broadcast</button>
+                                    <button class="btn btn-border" id="admin-change-pass-trigger"><i class="fa-solid fa-key"></i> Change Password</button>
+                                    <button class="btn btn-border" id="admin-logout-btn"><i class="fa-solid fa-right-from-bracket"></i> Logout</button>
+                                </div>
+                                
+                                <!-- Change Password Section -->
+                                <div id="admin-change-password-section" class="hide form-section">
+                                    <h4>Change Admin Password</h4>
+                                    <div class="input-group">
+                                        <input type="password" id="admin-new-password" placeholder="New Password" class="glass-input">
+                                    </div>
+                                    <div class="btn-row">
+                                        <button class="btn btn-purple" id="admin-save-pass-btn">Save Password</button>
+                                        <button class="btn btn-border" id="admin-cancel-pass-btn">Cancel</button>
+                                    </div>
+                                </div>
+
+                                <!-- Broadcast Form (Create/Edit) -->
+                                <div id="broadcast-form-section" class="hide form-section">
+                                    <h4 id="broadcast-form-title">Create Broadcast</h4>
+                                    <input type="hidden" id="broadcast-edit-id">
+                                    <div class="input-group">
+                                        <input type="text" id="broadcast-title" placeholder="Title" class="glass-input">
+                                    </div>
+                                    <div class="input-group">
+                                        <textarea id="broadcast-message" placeholder="Message" class="glass-textarea" rows="2"></textarea>
+                                    </div>
+                                    <div class="input-group">
+                                        <input type="text" id="broadcast-backend-url" placeholder="Backend URL (Optional)" class="glass-input">
+                                    </div>
+                                    <div class="input-group">
+                                        <input type="text" id="broadcast-btn-text" placeholder="Button Text (Optional)" class="glass-input">
+                                    </div>
+                                    <div class="input-group">
+                                        <input type="text" id="broadcast-btn-url" placeholder="Button URL (Optional)" class="glass-input">
+                                    </div>
+                                    <div class="input-group">
+                                        <input type="datetime-local" id="broadcast-expires-at" placeholder="Expiration Time (Optional)" class="glass-input">
+                                    </div>
+                                    <div class="input-checkbox">
+                                        <label><input type="checkbox" id="broadcast-enabled" checked> Enabled</label>
+                                    </div>
+                                    <div class="btn-row">
+                                        <button class="btn btn-purple" id="broadcast-save-btn-action">Save</button>
+                                        <button class="btn btn-border" id="broadcast-cancel-btn-action">Cancel</button>
+                                    </div>
+                                </div>
+
+                                <!-- Existing Broadcasts List for Edit/Delete -->
+                                <div class="admin-broadcasts-list" id="admin-broadcasts-list-container">
+                                    <!-- Populated dynamically -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Section 5: Collapsible Statistics -->
+                    <div class="tools-card glass-card" id="card-stats-collapsible">
+                        <div class="card-header collapse-trigger collapsed" id="stats-panel-trigger">
+                            <i class="fa-solid fa-chart-simple"></i>
+                            <h3>Listening Statistics</h3>
+                            <i class="fa-solid fa-chevron-down collapse-icon"></i>
+                        </div>
+                        <div class="card-body collapse-content hide" id="stats-panel-content">
+                            <div class="stats-grid">
+                                <!-- General metrics card -->
+                                <div class="metric-card glass-card">
+                                    <div class="metric-icon"><i class="fa-solid fa-clock"></i></div>
+                                    <div class="metric-data">
+                                        <h2 id="stats-total-time">0</h2>
+                                        <p>Listening Minutes</p>
+                                    </div>
+                                </div>
+                                
+                                <div class="metric-card glass-card">
+                                    <div class="metric-icon"><i class="fa-solid fa-star"></i></div>
+                                    <div class="metric-data">
+                                        <h2 id="stats-top-artist">None</h2>
+                                        <p>Top Artist</p>
+                                    </div>
+                                </div>
+
+                                <div class="metric-card glass-card">
+                                    <div class="metric-icon"><i class="fa-solid fa-music"></i></div>
+                                    <div class="metric-data">
+                                        <h2 id="stats-songs-played">0</h2>
+                                        <p>Tracks Listened</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- History Chart / Graph (Simulated Canvas/SVG bars) -->
+                            <div class="chart-container glass-card">
+                                <h3>Weekly Rhythm Graph</h3>
+                                <div class="weekly-bars" id="weekly-bars-container">
+                                    <div class="bar-column"><div class="bar-fill" style="height: 10%;"></div><span>Mon</span></div>
+                                    <div class="bar-column"><div class="bar-fill" style="height: 45%;"></div><span>Tue</span></div>
+                                    <div class="bar-column"><div class="bar-fill" style="height: 30%;"></div><span>Wed</span></div>
+                                    <div class="bar-column"><div class="bar-fill" style="height: 80%;"></div><span>Thu</span></div>
+                                    <div class="bar-column"><div class="bar-fill" style="height: 55%;"></div><span>Fri</span></div>
+                                    <div class="bar-column"><div class="bar-fill" style="height: 95%;"></div><span>Sat</span></div>
+                                    <div class="bar-column"><div class="bar-fill" style="height: 70%;"></div><span>Sun</span></div>
+                                </div>
+                            </div>
+
+                            <!-- Custom Profile / Privacy Control Card -->
+                            <div class="privacy-control-card glass-card">
+                                <h3>Private Listening Mode</h3>
+                                <p>Enabling Incognito blocks history writing, download tracking, and AI suggestion profiling.</p>
+                                <button class="btn btn-purple" id="stats-incognito-btn"><i class="fa-solid fa-eye-slash"></i> Turn On Incognito</button>
+                            </div>
+                        </div>
+                    </div>
+
                 </div>
             </section>
 
@@ -1126,5 +1271,10 @@
     <script src="js/visualizer.js"></script>
     <script src="js/jam.js"></script>
     <script src="js/app.js"></script>
+    <script src="js/tools/backend.js"></script>
+    <script src="js/tools/universal-link.js"></script>
+    <script src="js/tools/broadcast.js"></script>
+    <script src="js/tools/admin.js"></script>
+    <script src="js/tools/tools.js"></script>
 </body>
 </html>

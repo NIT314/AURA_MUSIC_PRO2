@@ -1,0 +1,20 @@
+{
+  "admin": {
+    "username_hash": "pbkdf2:sha256:600000$...",
+    "password_hash": "pbkdf2:sha256:600000$...",
+    "is_default_password": true
+  },
+  "broadcasts": [
+    {
+      "id": "1a2b3c4d",
+      "title": "Welcome to AURA Music Pro!",
+      "message": "Verify your backend connection settings or check our latest stream updates.",
+      "backend_url": "https://personal-notre-blah-marie.trycloudflare.com",
+      "button_text": "Verify",
+      "button_url": "https://personal-notre-blah-marie.trycloudflare.com/api/health",
+      "created_at": "2026-06-30T14:50:00Z",
+      "expires_at": "2026-07-15T14:50:00Z",
+      "enabled": true
+    }
+  ]
+}

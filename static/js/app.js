@@ -638,7 +638,7 @@ function createMobileTabBar(switchTabFn) {
         { id: "library", icon: "fa-compact-disc", label: "Library" },
         { id: "jam", icon: "fa-users-rays", label: "Jam" },
         { id: "equalizer", icon: "fa-sliders", label: "EQ" },
-        { id: "stats", icon: "fa-chart-simple", label: "Stats" }
+        { id: "tools", icon: "fa-screwdriver-wrench", label: "Tools" }
     ];
     
     tabs.forEach(t => {
@@ -1643,7 +1643,9 @@ async function playSingleSong(track, autoplay = true, fromJamSync = false, keepI
             } else {
                 // Online stream proxy
                 let streamUrl;
-                if (auraMode === "lite" && !(window.isInsideJam && window.isInsideJam())) {
+                if (track.isDirect) {
+                    streamUrl = track.id;
+                } else if (auraMode === "lite" && !(window.isInsideJam && window.isInsideJam())) {
                     showToast("Resolving stream from Piped API... 🔄");
                     const pipedUrl = await getPipedStreamUrl(track.id);
                     // Anti-skip check (race condition guard)

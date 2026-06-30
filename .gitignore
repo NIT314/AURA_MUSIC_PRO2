@@ -58,3 +58,7 @@ android/app/src/main/java/com/aura/music/pro2/*
 !android/app/src/main/java/com/aura/music/pro2/AuraPlayerPlugin.kt
 !android/app/src/main/java/com/aura/music/pro2/MainActivity.java
 node_modules/
+
+# Local database exclusions
+/backend_db/*
+!/backend_db/broadcasts.json.example

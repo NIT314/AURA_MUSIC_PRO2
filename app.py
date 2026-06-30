@@ -3,7 +3,12 @@ import time
 import json
 import logging
 import asyncio
-from fastapi import FastAPI, WebSocket, HTTPException, Query, Request
+import base64
+import hmac
+import hashlib
+import secrets
+from datetime import datetime
+from fastapi import FastAPI, WebSocket, HTTPException, Query, Request, Header
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -247,6 +252,311 @@ async def jam_websocket_handler(websocket: WebSocket, room_code: str, username: 
         logger.warning(f"WebSocket connection issue for user {username} in {code}: {e}")
     finally:
         await room.disconnect(username, websocket)
+
+# --- SECURE HASHING & DATABASE INITIALIZATION ---
+DB_DIR = "backend_db"
+DB_FILE = os.path.join(DB_DIR, "broadcasts.json")
+
+if not os.path.exists(DB_DIR):
+    os.makedirs(DB_DIR)
+
+JWT_SECRET = os.environ.get("AURA_JWT_SECRET")
+if not JWT_SECRET:
+    JWT_SECRET = secrets.token_hex(32)
+    logger.warning("AURA_JWT_SECRET environment variable not set! Using a transient random key for JWT signing. Admin sessions will invalidate on restart.")
+
+def generate_password_hash(password: str) -> str:
+    # PBKDF2-HMAC-SHA256 with 600,000+ iterations, 16-byte salt from secrets
+    salt = secrets.token_bytes(16)
+    iterations = 600000
+    key = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt, iterations)
+    return f"pbkdf2:sha256:{iterations}${salt.hex()}${key.hex()}"
+
+def check_password_hash(hash_str: str, password: str) -> bool:
+    try:
+        parts = hash_str.split('$')
+        if len(parts) != 3:
+            return False
+        algo_iter, salt_hex, key_hex = parts
+        algo, iterations = algo_iter.split(':')
+        if algo != 'pbkdf2:sha256':
+            return False
+        iterations = int(iterations)
+        salt = bytes.fromhex(salt_hex)
+        key = bytes.fromhex(key_hex)
+        new_key = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt, iterations)
+        return hmac.compare_digest(key, new_key)
+    except Exception:
+        return False
+
+def load_db() -> dict:
+    try:
+        with open(DB_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {"admin": {}, "broadcasts": []}
+
+def save_db(data: dict):
+    with open(DB_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+
+def init_db():
+    if not os.path.exists(DB_FILE):
+        # Generate secure random 16-character default password
+        initial_password = "".join(secrets.choice("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789") for _ in range(16))
+        print("\n" + "="*80)
+        print(f"[ADMIN INITIALIZATION] Created admin account. Initial password: {initial_password}")
+        print("Please log in and change your password immediately. Admin CRUD functions are locked until updated.")
+        print("="*80 + "\n")
+        logger.info(f"[ADMIN INITIALIZATION] Generated initial admin password: {initial_password}")
+        
+        db_data = {
+            "admin": {
+                "username_hash": generate_password_hash("admin"),
+                "password_hash": generate_password_hash(initial_password),
+                "is_default_password": True
+            },
+            "broadcasts": []
+        }
+        save_db(db_data)
+    else:
+        try:
+            db_data = load_db()
+            if "admin" not in db_data or "broadcasts" not in db_data:
+                raise ValueError("Malformed DB")
+        except Exception:
+            logger.error("Error reading broadcasts.json database. Resetting credentials.")
+            initial_password = "".join(secrets.choice("abcdefghijklmnopqrstuvwxyz0123456789") for _ in range(16))
+            print("\n" + "="*80)
+            print(f"[ADMIN RESET] Reset admin account. Password: {initial_password}")
+            print("="*80 + "\n")
+            db_data = {
+                "admin": {
+                    "username_hash": generate_password_hash("admin"),
+                    "password_hash": generate_password_hash(initial_password),
+                    "is_default_password": True
+                },
+                "broadcasts": []
+            }
+            save_db(db_data)
+
+init_db()
+
+# --- JWT UTILITIES ---
+def base64url_encode(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).decode('utf-8').replace('=', '')
+
+def base64url_decode(data: str) -> bytes:
+    padding = '=' * (4 - (len(data) % 4))
+    return base64.urlsafe_b64decode(data + padding)
+
+def create_jwt_token(payload: dict, secret: str) -> str:
+    header = {"alg": "HS256", "typ": "JWT"}
+    header_json = json.dumps(header, separators=(',', ':')).encode('utf-8')
+    payload_json = json.dumps(payload, separators=(',', ':')).encode('utf-8')
+    encoded_header = base64url_encode(header_json)
+    encoded_payload = base64url_encode(payload_json)
+    
+    signing_input = f"{encoded_header}.{encoded_payload}".encode('utf-8')
+    signature = hmac.new(secret.encode('utf-8'), signing_input, hashlib.sha256).digest()
+    encoded_signature = base64url_encode(signature)
+    return f"{encoded_header}.{encoded_payload}.{encoded_signature}"
+
+def verify_jwt_token(token: str, secret: str) -> dict:
+    try:
+        parts = token.split('.')
+        if len(parts) != 3:
+            return None
+        encoded_header, encoded_payload, encoded_signature = parts
+        
+        signing_input = f"{encoded_header}.{encoded_payload}".encode('utf-8')
+        expected_signature = hmac.new(secret.encode('utf-8'), signing_input, hashlib.sha256).digest()
+        expected_encoded_signature = base64url_encode(expected_signature)
+        
+        if not hmac.compare_digest(encoded_signature.encode('utf-8'), expected_encoded_signature.encode('utf-8')):
+            return None
+        
+        payload_bytes = base64url_decode(encoded_payload)
+        payload = json.loads(payload_bytes.decode('utf-8'))
+        
+        if 'exp' in payload and time.time() > payload['exp']:
+            return None
+        return payload
+    except Exception:
+        return None
+
+# --- AUTH DEVIATION CHECKERS ---
+async def get_current_admin_light(authorization: str = Header(None)) -> dict:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid authentication token")
+    token = authorization.split(" ")[1]
+    payload = verify_jwt_token(token, JWT_SECRET)
+    if not payload or payload.get("sub") != "admin":
+        raise HTTPException(status_code=401, detail="Session expired or invalid token")
+    return payload
+
+async def get_current_admin(authorization: str = Header(None)) -> dict:
+    payload = await get_current_admin_light(authorization)
+    db = load_db()
+    if db.get("admin", {}).get("is_default_password", True):
+        raise HTTPException(status_code=403, detail="Default password must be changed before accessing admin functions")
+    return payload
+
+# --- BROADCAST & ADMIN CONTROLLER ROUTES ---
+@app.get("/api/broadcasts")
+def get_broadcasts():
+    db = load_db()
+    now = datetime.utcnow()
+    active = []
+    for b in db.get("broadcasts", []):
+        if not b.get("enabled", True):
+            continue
+        exp_str = b.get("expires_at")
+        if exp_str:
+            try:
+                clean_str = exp_str.replace("Z", "")
+                if "+" in clean_str:
+                    clean_str = clean_str.split("+")[0]
+                expiry_dt = datetime.fromisoformat(clean_str)
+                if now > expiry_dt:
+                    continue
+            except Exception:
+                pass
+        active.append(b)
+    return {
+        "server_version": "1.3",
+        "broadcasts": active
+    }
+
+@app.post("/api/admin/login")
+@limiter.limit("5/minute")
+async def admin_login(request: Request):
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid request payload")
+        
+    username = body.get("username")
+    password = body.get("password")
+    
+    if not username or not password:
+        raise HTTPException(status_code=400, detail="Username and password are required")
+        
+    db = load_db()
+    admin_data = db.get("admin", {})
+    
+    stored_user_hash = admin_data.get("username_hash")
+    stored_pass_hash = admin_data.get("password_hash")
+    
+    if not check_password_hash(stored_user_hash, username) or not check_password_hash(stored_pass_hash, password):
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+        
+    payload = {
+        "sub": "admin",
+        "exp": time.time() + 7200 # 2 hours duration
+    }
+    token = create_jwt_token(payload, JWT_SECRET)
+    return {
+        "token": token,
+        "is_default_password": admin_data.get("is_default_password", True)
+    }
+
+@app.post("/api/admin/change-password")
+async def change_password(request: Request, authorization: str = Header(None)):
+    await get_current_admin_light(authorization)
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid request payload")
+        
+    new_password = body.get("new_password")
+    if not new_password or len(new_password) < 6:
+        raise HTTPException(status_code=400, detail="New password must be at least 6 characters long")
+        
+    db = load_db()
+    db["admin"]["password_hash"] = generate_password_hash(new_password)
+    db["admin"]["is_default_password"] = False
+    save_db(db)
+    return {"status": "success", "message": "Password changed successfully"}
+
+@app.post("/api/admin/broadcasts")
+async def create_broadcast(request: Request, authorization: str = Header(None)):
+    await get_current_admin(authorization)
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid request payload")
+        
+    title = body.get("title")
+    message = body.get("message")
+    if not title or not message:
+        raise HTTPException(status_code=400, detail="Title and message are required")
+        
+    broadcast_id = secrets.token_hex(4)
+    
+    new_broadcast = {
+        "id": broadcast_id,
+        "title": title,
+        "message": message,
+        "backend_url": body.get("backend_url"),
+        "button_text": body.get("button_text"),
+        "button_url": body.get("button_url"),
+        "created_at": datetime.utcnow().isoformat() + "Z",
+        "expires_at": body.get("expires_at"),
+        "enabled": body.get("enabled", True)
+    }
+    
+    db = load_db()
+    db["broadcasts"].append(new_broadcast)
+    save_db(db)
+    return {"status": "created", "id": broadcast_id}
+
+@app.put("/api/admin/broadcasts/{id}")
+async def update_broadcast(id: str, request: Request, authorization: str = Header(None)):
+    await get_current_admin(authorization)
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid request payload")
+        
+    db = load_db()
+    found_idx = -1
+    for idx, b in enumerate(db.get("broadcasts", [])):
+        if b.get("id") == id:
+            found_idx = idx
+            break
+            
+    if found_idx == -1:
+        raise HTTPException(status_code=404, detail="Broadcast not found")
+        
+    b = db["broadcasts"][found_idx]
+    b["title"] = body.get("title", b["title"])
+    b["message"] = body.get("message", b["message"])
+    b["backend_url"] = body.get("backend_url", b.get("backend_url"))
+    b["button_text"] = body.get("button_text", b.get("button_text"))
+    b["button_url"] = body.get("button_url", b.get("button_url"))
+    b["expires_at"] = body.get("expires_at", b.get("expires_at"))
+    b["enabled"] = body.get("enabled", b.get("enabled", True))
+    
+    save_db(db)
+    return {"status": "updated"}
+
+@app.delete("/api/admin/broadcasts/{id}")
+async def delete_broadcast(id: str, authorization: str = Header(None)):
+    await get_current_admin(authorization)
+    db = load_db()
+    found_idx = -1
+    for idx, b in enumerate(db.get("broadcasts", [])):
+        if b.get("id") == id:
+            found_idx = idx
+            break
+            
+    if found_idx == -1:
+        raise HTTPException(status_code=404, detail="Broadcast not found")
+        
+    db["broadcasts"].pop(found_idx)
+    save_db(db)
+    return {"status": "deleted"}
 
 os.makedirs("static/css", exist_ok=True)
 os.makedirs("static/js", exist_ok=True)
