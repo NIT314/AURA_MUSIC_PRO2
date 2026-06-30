@@ -433,3 +433,182 @@ def get_artist_details(channel_id: str):
     except Exception as e:
         logger.error(f"Failed to get artist details for {channel_id}: {e}")
         return {}
+
+
+def fetch_youtube_playlist_ytmusic(playlist_id: str):
+    playlist = ytmusic.get_playlist(playlistId=playlist_id, limit=500)
+    tracks = []
+    for item in playlist.get('tracks', []):
+        if not item:
+            continue
+        video_id = item.get('videoId')
+        if not video_id:
+            continue
+            
+        artists = item.get('artists', [])
+        if artists:
+            artist_name = ", ".join([a.get("name", "") for a in artists if a.get("name")])
+            artist_id = artists[0].get("id", "")
+        else:
+            artist_name = item.get('artist', '') or 'Unknown Artist'
+            artist_id = ''
+            
+        thumbnails = item.get('thumbnails', [])
+        thumbnail = thumbnails[-1].get('url', '') if thumbnails else f"https://img.youtube.com/vi/{video_id}/0.jpg"
+        
+        duration_sec = item.get('duration_seconds', 0)
+        duration_str = item.get('duration', '')
+        if not duration_str and duration_sec:
+            m, s = divmod(int(duration_sec), 60)
+            duration_str = f"{m}:{s:02d}"
+            
+        album_name = ""
+        album_id = ""
+        album_data = item.get('album')
+        if album_data:
+            if isinstance(album_data, dict):
+                album_name = album_data.get('name', '')
+                album_id = album_data.get('id', '')
+            elif isinstance(album_data, str):
+                album_name = album_data
+
+        tracks.append({
+            "id": video_id,
+            "title": item.get('title', 'Unknown Title'),
+            "artist": artist_name,
+            "artistId": artist_id,
+            "album": album_name,
+            "albumId": album_id,
+            "thumbnail": thumbnail,
+            "duration": duration_str,
+            "durationSeconds": int(duration_sec),
+            "type": "song",
+            "year": ""
+        })
+    return {
+        "title": playlist.get('title') or "YouTube Playlist",
+        "playlistId": playlist_id,
+        "tracks": tracks
+    }
+
+
+def fetch_youtube_playlist_ytdlp(playlist_id: str):
+    ydl_opts = {
+        'extract_flat': 'in_playlist',
+        'skip_download': True,
+        'quiet': True,
+        'no_warnings': True,
+        'nocheckcertificate': True,
+        'cookiefile': COOKIES_PATH if COOKIES_PATH and os.path.exists(COOKIES_PATH) else None,
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['android', 'ios']
+            }
+        }
+    }
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(f"https://www.youtube.com/playlist?list={playlist_id}", download=False)
+        tracks = []
+        for entry in info.get('entries', []):
+            if not entry:
+                continue
+            video_id = entry.get('id') or entry.get('url')
+            if not video_id:
+                continue
+            title = entry.get('title') or 'Unknown Title'
+            artist = entry.get('uploader') or entry.get('artist') or 'Unknown Artist'
+            duration_sec = entry.get('duration') or 0
+            
+            m, s = divmod(int(duration_sec), 60)
+            duration_str = f"{m}:{s:02d}"
+            
+            thumbnail = entry.get('thumbnail') or f"https://img.youtube.com/vi/{video_id}/0.jpg"
+            
+            tracks.append({
+                "id": video_id,
+                "title": title,
+                "artist": artist,
+                "artistId": "",
+                "album": "",
+                "albumId": "",
+                "thumbnail": thumbnail,
+                "duration": duration_str,
+                "durationSeconds": int(duration_sec),
+                "type": "song",
+                "year": ""
+            })
+        return {
+            "title": info.get('title') or "YouTube Playlist",
+            "playlistId": playlist_id,
+            "tracks": tracks
+        }
+
+
+def fetch_spotify_playlist(playlist_id: str):
+    import urllib.request
+    import re
+    import json
+    
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+        'Accept-Language': 'en-US,en;q=0.9'
+    }
+    
+    html = None
+    try:
+        url = f"https://open.spotify.com/embed/playlist/{playlist_id}"
+        req = urllib.request.Request(url, headers=headers)
+        html = urllib.request.urlopen(req, timeout=10).read().decode('utf-8')
+    except Exception as e:
+        logger.warning(f"Spotify embed fetch failed: {e}. Trying main playlist page fallback...")
+        try:
+            url = f"https://open.spotify.com/playlist/{playlist_id}"
+            req = urllib.request.Request(url, headers=headers)
+            html = urllib.request.urlopen(req, timeout=10).read().decode('utf-8')
+        except Exception as e2:
+            logger.error(f"Spotify main page fetch failed: {e2}")
+            raise Exception("Failed to fetch Spotify playlist page")
+            
+    next_data_match = re.search(r'<script[^>]*id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>', html)
+    if not next_data_match:
+        next_data_match = re.search(r'<script[^>]*id="initial-state"[^>]*>([\s\S]*?)<\/script>', html)
+        
+    if not next_data_match:
+        raise Exception("Failed to parse Spotify playlist state")
+        
+    data = json.loads(next_data_match.group(1))
+    props = data.get("props", {})
+    pageProps = props.get("pageProps", {})
+    
+    raw_tracks = []
+    playlist_title = "Spotify Playlist"
+    
+    if pageProps.get("playlist"):
+        playlist_title = pageProps["playlist"].get("name", "Spotify Playlist")
+        raw_tracks = pageProps["playlist"].get("tracks", {}).get("items", [])
+    elif pageProps.get("state") and pageProps["state"].get("playlist"):
+        playlist_title = pageProps["state"]["playlist"].get("name", "Spotify Playlist")
+        raw_tracks = pageProps["state"]["playlist"].get("tracks", {}).get("items", [])
+        
+    tracks = []
+    for item in raw_tracks:
+        t = item.get("track") or item
+        name = t.get("name")
+        if not name:
+            continue
+        artists_list = t.get("artists", [])
+        if artists_list:
+            artist_name = ", ".join([a.get("name", "") for a in artists_list if a.get("name")])
+        else:
+            artist_name = t.get("artist") or ""
+        tracks.append({
+            "title": name,
+            "artist": artist_name
+        })
+        
+    return {
+        "title": playlist_title,
+        "playlistId": playlist_id,
+        "tracks": tracks
+    }

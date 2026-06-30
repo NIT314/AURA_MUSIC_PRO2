@@ -17,7 +17,9 @@ import httpx
 # Services
 from services.music_service import (
     search_music, get_suggestions, get_streaming_url,
-    get_related_tracks, get_album_details, get_artist_details
+    get_related_tracks, get_album_details, get_artist_details,
+    fetch_youtube_playlist_ytmusic, fetch_youtube_playlist_ytdlp,
+    fetch_spotify_playlist
 )
 from services.lyrics_service import fetch_lyrics
 from services.recommendation_service import get_mood_playlist, get_ai_recommendations
@@ -150,6 +152,78 @@ def api_album(browse_id: str):
 @app.get("/api/artists/{channel_id}")
 def api_artist(channel_id: str):
     return get_artist_details(channel_id)
+
+
+@app.get("/api/playlist/import")
+@limiter.limit("20/minute")
+async def api_playlist_import(request: Request, provider: str = None, id: str = None, url: str = None):
+    playlist_id = id
+    selected_provider = provider
+    
+    if url:
+        import re
+        url = url.strip()
+        # YouTube detection
+        yt_match = re.search(r'[&?]list=([a-zA-Z0-9_-]+)', url)
+        if yt_match:
+            playlist_id = yt_match.group(1)
+            selected_provider = "youtube"
+        else:
+            # Spotify detection
+            sp_match = re.search(r'playlist/([a-zA-Z0-9]+)', url)
+            if sp_match:
+                playlist_id = sp_match.group(1)
+                selected_provider = "spotify"
+                
+    if not playlist_id:
+        raise HTTPException(status_code=400, detail="Missing playlist ID or URL")
+        
+    if not selected_provider:
+        selected_provider = "youtube"
+        
+    selected_provider = selected_provider.lower().strip()
+    
+    if selected_provider == "youtube":
+        try:
+            return await asyncio.to_thread(fetch_youtube_playlist_ytmusic, playlist_id)
+        except Exception as e:
+            logger.warning(f"YTMusic playlist fetch failed: {e}. Falling back to yt-dlp...")
+            try:
+                return await asyncio.to_thread(fetch_youtube_playlist_ytdlp, playlist_id)
+            except Exception as e2:
+                logger.error(f"yt-dlp playlist fetch failed: {e2}")
+                raise HTTPException(status_code=500, detail=f"Failed to fetch YouTube playlist: {e2}")
+                
+    elif selected_provider == "spotify":
+        try:
+            spotify_data = await asyncio.to_thread(fetch_spotify_playlist, playlist_id)
+            
+            def search_single(track_info):
+                q = f"{track_info['title']} {track_info['artist']}".strip()
+                try:
+                    res = search_music(q, filter_type='songs')
+                    return res[0] if res else None
+                except Exception:
+                    return None
+            
+            async def resolve_one(track_info):
+                return await asyncio.to_thread(search_single, track_info)
+                
+            tasks = [resolve_one(t) for t in spotify_data["tracks"]]
+            results = await asyncio.gather(*tasks)
+            resolved_tracks = [r for r in results if r]
+            
+            return {
+                "title": spotify_data["title"],
+                "playlistId": playlist_id,
+                "tracks": resolved_tracks
+            }
+        except Exception as e:
+            logger.error(f"Spotify playlist resolution failed: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to resolve Spotify playlist: {e}")
+            
+    else:
+        raise HTTPException(status_code=400, detail=f"Unsupported provider: {selected_provider}")
 
 @app.get("/api/jam/create")
 def api_create_room(room_code: str, host: str):
