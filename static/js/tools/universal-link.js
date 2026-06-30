@@ -146,7 +146,9 @@ window.AuraUniversalLink = {
         const playlistMatch = url.match(/[&?]list=([a-zA-Z0-9_-]+)/);
         if (playlistMatch) playlistId = playlistMatch[1];
 
-        if (videoId) {
+        if (playlistId) {
+            await this.resolveYoutubePlaylist(playlistId);
+        } else if (videoId) {
             showToast("Playing YouTube video...");
             const track = {
                 id: videoId,
@@ -170,19 +172,6 @@ window.AuraUniversalLink = {
             }
             
             await window.playSingleSong(track);
-        } else if (playlistId) {
-            showToast("Importing playlist...");
-            if (auraMode === "lite") {
-                showToast("Playlists can only be imported in Pro Mode.");
-            } else {
-                const apiBase = window.getAuraBackendUrl() || "";
-                const response = await fetch(`${apiBase}/api/playlist/import?id=${playlistId}`);
-                if (response.ok) {
-                    showToast("Playlist loaded successfully!");
-                } else {
-                    showToast("Failed to load playlist.");
-                }
-            }
         } else {
             await this.resolveGeneric(url);
         }
@@ -208,6 +197,13 @@ window.AuraUniversalLink = {
     },
 
     async resolveSpotify(url) {
+        const playlistMatch = url.match(/playlist\/([a-zA-Z0-9]+)/);
+        if (playlistMatch) {
+            const playlistId = playlistMatch[1];
+            await this.resolveSpotifyPlaylist(playlistId);
+            return;
+        }
+
         showToast("Resolving Spotify Link...");
         let metadata = { title: "", artist: "" };
 
@@ -346,6 +342,159 @@ window.AuraUniversalLink = {
             } catch (err) {
                 console.error("Link search fallback error:", err);
                 showToast("Failed to resolve track search.");
+            }
+        }
+    },
+
+    async resolveSpotifyPlaylist(playlistId) {
+        showToast("Loading Spotify playlist... 🔍");
+        try {
+            const proxyUrl = "https://corsproxy.io/?url=" + encodeURIComponent("https://open.spotify.com/embed/playlist/" + playlistId);
+            const res = await fetch(proxyUrl);
+            if (!res.ok) throw new Error("HTTP " + res.status);
+            const html = await res.text();
+            
+            const nextDataMatch = html.match(/<script[^>]*id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
+            if (!nextDataMatch) {
+                throw new Error("No __NEXT_DATA__ found in embed page");
+            }
+            
+            const data = JSON.parse(nextDataMatch[1]);
+            const pageProps = data.props.pageProps;
+            
+            let rawTracks = [];
+            if (pageProps.playlist && pageProps.playlist.tracks && pageProps.playlist.tracks.items) {
+                rawTracks = pageProps.playlist.tracks.items;
+            } else if (pageProps.state && pageProps.state.playlist && pageProps.state.playlist.tracks) {
+                rawTracks = pageProps.state.playlist.tracks;
+            }
+            
+            const tracks = rawTracks.map(item => {
+                const t = item.track || item;
+                return {
+                    title: t.name || "",
+                    artist: t.artists ? t.artists.map(a => a.name).join(", ") : (t.artist || "")
+                };
+            }).filter(t => t.title);
+
+            if (tracks.length === 0) {
+                showToast("No tracks found in Spotify playlist.");
+                return;
+            }
+
+            showToast(`Found ${tracks.length} tracks. Resolving first track...`);
+            
+            // Resolve and play the first track instantly
+            const firstQuery = `${tracks[0].title} ${tracks[0].artist}`.trim();
+            const firstResolved = await this.searchSingleTrack(firstQuery);
+            
+            if (firstResolved) {
+                playerQueue.push(firstResolved);
+                await window.playSingleSong(firstResolved);
+                showToast("Started playlist playback! Loading other tracks in background... ⚡");
+            } else {
+                showToast("Failed to resolve first track. Trying to load the rest...");
+            }
+
+            // Resolve the remaining tracks in the background
+            (async () => {
+                for (let i = 1; i < tracks.length; i++) {
+                    const query = `${tracks[i].title} ${tracks[i].artist}`.trim();
+                    try {
+                        const resolved = await this.searchSingleTrack(query);
+                        if (resolved) {
+                            playerQueue.push(resolved);
+                        }
+                    } catch (e) {
+                        console.warn("Failed to resolve background track:", query, e);
+                    }
+                }
+                showToast("All playlist tracks resolved and queued! 🎉");
+            })();
+
+        } catch (e) {
+            console.error("Spotify playlist import error:", e);
+            showToast("Failed to import Spotify playlist.");
+        }
+    },
+
+    async resolveYoutubePlaylist(playlistId) {
+        showToast("Loading YouTube playlist... 🔍");
+        
+        // Step 1: Try Invidious
+        try {
+            const data = await window.fetchFromInvidious("/api/v1/playlists/" + playlistId);
+            if (data && data.videos && data.videos.length > 0) {
+                const tracks = data.videos.map(v => ({
+                    id: v.videoId,
+                    title: v.title,
+                    artist: v.author || "YouTube Artist",
+                    thumbnail: (v.videoThumbnails && v.videoThumbnails.length > 0) ? v.videoThumbnails[0].url : `https://img.youtube.com/vi/${v.videoId}/0.jpg`,
+                    durationSeconds: v.lengthSeconds || 0,
+                    isLocal: false
+                }));
+                
+                playerQueue.push(...tracks);
+                showToast(`Queued ${tracks.length} tracks from playlist! 🎶`);
+                await window.playSingleSong(tracks[0]);
+                return;
+            }
+        } catch (e) {
+            console.warn("Invidious playlist fetch failed, trying Piped...", e);
+        }
+
+        // Step 2: Try Piped
+        try {
+            const data = await window.fetchFromPiped("/playlists/" + playlistId);
+            if (data && data.relatedStreams && data.relatedStreams.length > 0) {
+                const tracks = data.relatedStreams.map(s => {
+                    const videoId = s.url.split("v=")[1] || s.videoId || "";
+                    return {
+                        id: videoId,
+                        title: s.title,
+                        artist: s.uploaderName || "YouTube Artist",
+                        thumbnail: s.thumbnail || `https://img.youtube.com/vi/${videoId}/0.jpg`,
+                        durationSeconds: s.duration || 0,
+                        isLocal: false
+                    };
+                }).filter(t => t.id);
+
+                if (tracks.length > 0) {
+                    playerQueue.push(...tracks);
+                    showToast(`Queued ${tracks.length} tracks from playlist! 🎶`);
+                    await window.playSingleSong(tracks[0]);
+                    return;
+                }
+            }
+        } catch (e) {
+            console.error("Piped playlist fetch failed:", e);
+        }
+
+        showToast("Failed to load YouTube playlist. Make sure it is public.");
+    },
+
+    async searchSingleTrack(query) {
+        if (auraMode === "lite") {
+            try {
+                const data = await window.fetchFromPiped("/search", { q: query, filter: "music_songs" });
+                const items = data.items || [];
+                const results = items
+                    .map(window.mapPipedItem)
+                    .filter(item => item !== null);
+                return results.length > 0 ? results[0] : null;
+            } catch (err) {
+                console.error("Piped search error for track resolution:", err);
+                return null;
+            }
+        } else {
+            try {
+                const apiBase = window.getAuraBackendUrl() || "";
+                const res = await fetch(`${apiBase}/api/search?q=${encodeURIComponent(query)}&filter=songs`);
+                const results = await res.json();
+                return results.length > 0 ? results[0] : null;
+            } catch (err) {
+                console.error("Backend search error for track resolution:", err);
+                return null;
             }
         }
     }
