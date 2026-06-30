@@ -5447,13 +5447,19 @@ async function initModeSystem() {
     document.getElementById("connect-backend-btn")?.addEventListener("click", _handleConnectClick);
 
     // Allow Enter key in URL input
-    document.getElementById("backend-url-input")?.addEventListener("keydown", (e) => {
+    document.getElementById("dropdown-backend-url-input")?.addEventListener("keydown", (e) => {
         if (e.key === "Enter") _handleConnectClick();
+    });
+
+    // Sync input typing between the dropdown URL and the tools URL input
+    document.getElementById("dropdown-backend-url-input")?.addEventListener("input", (e) => {
+        const toolsInput = document.getElementById("tools-backend-url-input");
+        if (toolsInput) toolsInput.value = e.target.value;
     });
 
     // Change link button
     document.getElementById("change-backend-url-btn")?.addEventListener("click", () => {
-        const urlInput = document.getElementById("backend-url-input");
+        const urlInput = document.getElementById("dropdown-backend-url-input");
         if (urlInput) urlInput.value = auraBackendUrl;
         _showUrlInputSection();
     });
@@ -5470,6 +5476,10 @@ async function initModeSystem() {
         const savedUrl = await getConfigValue("backend_url");
         if (savedUrl && typeof savedUrl === "string" && savedUrl.startsWith("http")) {
             auraBackendUrl = savedUrl;
+            const dropInput = document.getElementById("dropdown-backend-url-input");
+            const toolsInput = document.getElementById("tools-backend-url-input");
+            if (dropInput) dropInput.value = savedUrl;
+            if (toolsInput) toolsInput.value = savedUrl;
             const isAlive = await checkBackendHealth();
             setMode(isAlive ? "pro" : "lite");
             if (!isAlive) {
@@ -5610,6 +5620,13 @@ async function saveBackendUrl(rawUrl) {
     }
     auraBackendUrl = url;
     await setConfigValue("backend_url", url);
+    
+    // Update both inputs to normalized URL
+    const dropInput = document.getElementById("dropdown-backend-url-input");
+    const toolsInput = document.getElementById("tools-backend-url-input");
+    if (dropInput) dropInput.value = url;
+    if (toolsInput) toolsInput.value = url;
+    
     return url;
 }
 
@@ -5617,6 +5634,12 @@ async function clearBackendUrl() {
     auraBackendUrl = "";
     await deleteConfigValue("backend_url");
     setMode("lite");
+    
+    // Clear both inputs
+    const dropInput = document.getElementById("dropdown-backend-url-input");
+    const toolsInput = document.getElementById("tools-backend-url-input");
+    if (dropInput) dropInput.value = "";
+    if (toolsInput) toolsInput.value = "";
 }
 
 // --- Dropdown UI helpers ---
@@ -5655,7 +5678,7 @@ function _showUrlInputSection() {
     if (connSection) connSection.classList.add("hide");
     // Focus the input
     setTimeout(() => {
-        document.getElementById("backend-url-input")?.focus();
+        document.getElementById("dropdown-backend-url-input")?.focus();
     }, 100);
 }
 
@@ -5683,7 +5706,7 @@ function _showConnectedSection() {
 }
 
 async function _handleConnectClick() {
-    const urlInput = document.getElementById("backend-url-input");
+    const urlInput = document.getElementById("dropdown-backend-url-input");
     const statusEl = document.getElementById("mode-connection-status");
     const rawUrl = urlInput?.value?.trim();
 

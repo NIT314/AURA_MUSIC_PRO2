@@ -5,13 +5,18 @@
 
 window.AuraBackend = {
     init() {
-        const urlInput = document.getElementById("backend-url-input");
+        const urlInput = document.getElementById("tools-backend-url-input");
         const saveBtn = document.getElementById("backend-save-btn");
         const copyBtn = document.getElementById("backend-copy-btn");
         const checkBtn = document.getElementById("backend-check-btn");
 
         if (urlInput) {
             urlInput.value = window.getAuraBackendUrl() || "";
+            // Sync typing from tools input to dropdown input
+            urlInput.addEventListener("input", (e) => {
+                const dropInput = document.getElementById("dropdown-backend-url-input");
+                if (dropInput) dropInput.value = e.target.value;
+            });
         }
 
         if (saveBtn) {
