@@ -56,5 +56,5 @@ android/app/src/main/java/com/aura/music/*
 android/app/src/main/java/com/aura/music/pro2/*
 !android/app/src/main/java/com/aura/music/pro2/AuraPlaybackService.kt
 !android/app/src/main/java/com/aura/music/pro2/AuraPlayerPlugin.kt
-!android/app/src/main/java/com/aura/music/pro2/MainActivity.java
+!android/app/src/main/java/com/aura/music/pro2/MainActivity.kt
 node_modules/
