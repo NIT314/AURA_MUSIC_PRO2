@@ -2106,7 +2106,7 @@ async function loadSyncedLyrics(track) {
     currentActiveLyricIndex = -1; // Reset active index
     
     try {
-        const url = `/api/lyrics?video_id=${track.id}&title=${encodeURIComponent(track.title)}&artist=${encodeURIComponent(track.artist)}&duration=${track.durationSeconds || 0}`;
+        const url = getApiUrl(`/api/lyrics?video_id=${track.id}&title=${encodeURIComponent(track.title)}&artist=${encodeURIComponent(track.artist)}&duration=${track.durationSeconds || 0}`);
         const res = await fetch(url);
         
         // Guard against race conditions when user skips tracks rapidly

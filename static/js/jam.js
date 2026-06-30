@@ -74,10 +74,16 @@ function connectJamRoom(username, roomCode, isReconnect = false) {
     currentRoomCode = trimmedRoom;
     jamShouldReconnect = true;
     
-    // Construct WebSockets URL
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const host = window.location.host;
-    const wsUrl = `${protocol}//${host}/api/jam/ws/${currentRoomCode}?username=${encodeURIComponent(currentUsername)}`;
+    // Construct WebSockets URL (using auraBackendUrl base if available to support native app WebView)
+    let wsBase = "";
+    if (typeof auraBackendUrl !== 'undefined' && auraBackendUrl && auraBackendUrl.startsWith("http")) {
+        wsBase = auraBackendUrl.replace(/\/+$/, "").replace(/^http:/i, "ws:").replace(/^https:/i, "wss:");
+    } else {
+        const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+        const host = window.location.host;
+        wsBase = `${protocol}//${host}`;
+    }
+    const wsUrl = `${wsBase}/api/jam/ws/${currentRoomCode}?username=${encodeURIComponent(currentUsername)}`;
     
     if (!isReconnect) {
         showToast(`Connecting to Room ${currentRoomCode}...`);

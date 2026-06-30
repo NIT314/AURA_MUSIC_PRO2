@@ -23,6 +23,13 @@ import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionResult
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.Futures
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.content.Context
+import android.content.pm.ServiceInfo
+import android.os.Build
+import androidx.core.app.NotificationCompat
+import androidx.media3.session.MediaStyleNotificationHelper
 
 class AuraPlaybackService : MediaSessionService() {
 
@@ -77,6 +84,19 @@ class AuraPlaybackService : MediaSessionService() {
         }
         // Return local binder for direct Capacitor plugin communication
         return binder
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == "ACTION_PLAY_PAUSE") {
+            exoPlayer?.let { player ->
+                if (player.isPlaying) {
+                    player.pause()
+                } else {
+                    player.play()
+                }
+            }
+        }
+        return super.onStartCommand(intent, flags, startId)
     }
 
     override fun onCreate() {
@@ -170,6 +190,7 @@ class AuraPlaybackService : MediaSessionService() {
             player.setMediaItem(mediaItem)
             player.prepare()
             player.play()
+            showNotification(true)
             
             // Start progress reporting
             handler.removeCallbacks(progressRunnable)
@@ -359,8 +380,10 @@ class AuraPlaybackService : MediaSessionService() {
             if (isPlaying) {
                 handler.removeCallbacks(progressRunnable)
                 handler.post(progressRunnable)
+                showNotification(true)
             } else {
                 handler.removeCallbacks(progressRunnable)
+                showNotification(false)
             }
         }
         override fun onAudioSessionIdChanged(audioSessionId: Int) {
@@ -422,6 +445,76 @@ class AuraPlaybackService : MediaSessionService() {
                 }
             }
             return super.onPlayerCommandRequest(session, controller, playerCommand)
+        }
+    }
+
+    @OptIn(UnstableApi::class)
+    private fun showNotification(isPlaying: Boolean) {
+        val channelId = "aura_playback_channel"
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channelName = "Aura Playback"
+            val importance = NotificationManager.IMPORTANCE_LOW
+            val channel = NotificationChannel(channelId, channelName, importance).apply {
+                description = "Playback controls and notifications for Aura Music"
+            }
+            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            manager.createNotificationChannel(channel)
+        }
+
+        val intent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            this, 0, intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        val session = mediaSession ?: return
+        val mediaStyle = MediaStyleNotificationHelper.MediaStyle(session)
+            .setShowActionsInCompactView(0)
+
+        val notificationBuilder = NotificationCompat.Builder(this, channelId)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentTitle(if (currentTitle.isNotEmpty()) currentTitle else "AURA Music")
+            .setContentText(if (currentArtist.isNotEmpty()) currentArtist else "Playing...")
+            .setContentIntent(pendingIntent)
+            .setStyle(mediaStyle)
+            .setSilent(true)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setOngoing(isPlaying)
+
+        // Actions
+        val playPauseIcon = if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play
+        val playPauseTitle = if (isPlaying) "Pause" else "Play"
+        val playPauseIntent = Intent(this, AuraPlaybackService::class.java).apply {
+            action = "ACTION_PLAY_PAUSE"
+        }
+        val playPausePendingIntent = PendingIntent.getService(
+            this, 1, playPauseIntent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        notificationBuilder.addAction(playPauseIcon, playPauseTitle, playPausePendingIntent)
+
+        val notification = notificationBuilder.build()
+
+        try {
+            if (isPlaying) {
+                if (Build.VERSION.SDK_INT >= 34) {
+                    startForeground(1001, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
+                } else if (Build.VERSION.SDK_INT >= 29) {
+                    startForeground(1001, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
+                } else {
+                    startForeground(1001, notification)
+                }
+                android.util.Log.d("AuraPlayback", "startForeground succeeded with type mediaPlayback")
+            } else {
+                stopForeground(false)
+                val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                manager.notify(1001, notification)
+                android.util.Log.d("AuraPlayback", "stopForeground (keep notification) succeeded")
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("AuraPlayback", "startForeground/stopForeground failed: ${e.message}", e)
         }
     }
 
