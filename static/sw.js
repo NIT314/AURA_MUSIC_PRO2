@@ -1,13 +1,13 @@
 const CACHE_NAME = 'aura-v9'; // Updated: icons removed from mandatory cache
 const ASSETS = [
-  '/',
-  '/index.html',
-  '/css/styles.css',
-  '/js/app.js',
-  '/js/equalizer.js',
-  '/js/visualizer.js',
-  '/js/jam.js',
-  '/manifest.json'
+  './',
+  'index.html',
+  'css/styles.css',
+  'js/app.js',
+  'js/equalizer.js',
+  'js/visualizer.js',
+  'js/jam.js',
+  'manifest.json'
   // Icons cached lazily on first fetch — not blocking SW install
 ];
 
