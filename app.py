@@ -278,8 +278,16 @@ def check_password_hash(hash_str: str, password: str) -> bool:
         if len(parts) != 3:
             return False
         algo_iter, salt_hex, key_hex = parts
-        algo, iterations = algo_iter.split(':')
-        if algo != 'pbkdf2:sha256':
+        algo_parts = algo_iter.split(':')
+        if len(algo_parts) == 3:
+            algo, subalgo, iterations = algo_parts
+            if algo != 'pbkdf2' or subalgo != 'sha256':
+                return False
+        elif len(algo_parts) == 2:
+            algo_sub, iterations = algo_parts
+            if algo_sub != 'pbkdf2:sha256':
+                return False
+        else:
             return False
         iterations = int(iterations)
         salt = bytes.fromhex(salt_hex)

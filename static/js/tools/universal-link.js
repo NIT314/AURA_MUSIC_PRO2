@@ -165,7 +165,7 @@ window.AuraUniversalLink = {
             await window.playSingleSong(track);
         } else if (playlistId) {
             showToast("Importing playlist...");
-            if (window.auraMode === "lite") {
+            if (auraMode === "lite") {
                 showToast("Playlists can only be imported in Pro Mode.");
             } else {
                 const apiBase = window.getAuraBackendUrl() || "";
@@ -306,7 +306,7 @@ window.AuraUniversalLink = {
     async resolveGeneric(query) {
         showToast(`Searching for: "${query}"... 🔍`);
         
-        if (window.auraMode === "lite") {
+        if (auraMode === "lite") {
             try {
                 const data = await window.fetchFromPiped("/search", { q: query, filter: "music_songs" });
                 const items = data.items || [];

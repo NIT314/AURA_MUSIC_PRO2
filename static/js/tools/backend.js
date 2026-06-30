@@ -89,6 +89,10 @@ window.AuraBackend = {
             });
         }
 
+        window.addEventListener("aura-mode-change", () => {
+            this.updateUI();
+        });
+
         this.updateUI();
     },
 
@@ -101,7 +105,7 @@ window.AuraBackend = {
             if (!currentUrl) {
                 indicator.className = "status-indicator offline";
                 statusText.textContent = "Disconnected (No URL configured)";
-            } else if (window.auraMode === "pro") {
+            } else if (auraMode === "pro") {
                 indicator.className = "status-indicator pro";
                 statusText.textContent = "Connected (Pro Mode active)";
             } else {
