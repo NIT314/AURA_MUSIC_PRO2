@@ -1,4 +1,4 @@
-const CACHE_NAME = 'aura-v9'; // Updated: icons removed from mandatory cache
+const CACHE_NAME = 'aura-v10'; // Updated: incremented to trigger SW refresh
 const ASSETS = [
   './',
   'index.html',
@@ -50,16 +50,19 @@ self.addEventListener('fetch', (e) => {
           return response;
         }
         
-        const resClone = response.clone();
-        caches.open(CACHE_NAME).then((cache) => {
-          cache.put(e.request, resClone);
-        });
+        // Only cache requests with http/https scheme to prevent browser extension errors
+        if (e.request.url.startsWith('http')) {
+          const resClone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(e.request, resClone);
+          });
+        }
         return response;
       })
       .catch(() => {
         return caches.match(e.request).then((cachedResponse) => {
           if (cachedResponse) return cachedResponse; // Cache mil gaya toh de do
-          if (e.request.mode === 'navigate') return caches.match('/index.html');
+          if (e.request.mode === 'navigate') return caches.match('index.html');
           return Response.error(); // 🔥 FIX 2: Null ki jagah proper error do jisse TypeError na aaye
         });
       })
