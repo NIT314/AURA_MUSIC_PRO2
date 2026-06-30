@@ -19,6 +19,7 @@ class AuraPlayerPlugin : Plugin() {
 
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
+            android.util.Log.d("AuraPlayerPlugin", "onServiceConnected: Service bound successfully")
             val binder = service as AuraPlaybackService.LocalBinder
             playbackService = binder.getService()
             isBound = true
@@ -54,10 +55,12 @@ class AuraPlayerPlugin : Plugin() {
 
     override fun load() {
         super.load()
+        android.util.Log.d("AuraPlayerPlugin", "AuraPlayerPlugin loaded")
         bindPlaybackService()
     }
 
     private fun bindPlaybackService() {
+        android.util.Log.d("AuraPlayerPlugin", "Starting AuraPlaybackService")
         val intent = Intent(context, AuraPlaybackService::class.java)
         // Start service so it lives in the foreground even when unbound
         try {

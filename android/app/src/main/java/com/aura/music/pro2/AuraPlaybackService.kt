@@ -87,6 +87,7 @@ class AuraPlaybackService : MediaSessionService() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        android.util.Log.d("AuraPlaybackService", "onStartCommand called with action: ${intent?.action}")
         if (intent?.action == "ACTION_PLAY_PAUSE") {
             exoPlayer?.let { player ->
                 if (player.isPlaying) {
@@ -101,6 +102,7 @@ class AuraPlaybackService : MediaSessionService() {
 
     override fun onCreate() {
         super.onCreate()
+        android.util.Log.d("AuraPlaybackService", "onCreate called")
         initializePlayer()
     }
 
