@@ -1654,6 +1654,10 @@ async function playSingleSong(track, autoplay = true, fromJamSync = false, keepI
                         return;
                     }
                     if (!pipedUrl) {
+                        if (window.PlaybackProvider) {
+                            window.PlaybackProvider.activateIframe(track.id);
+                            return;
+                        }
                         showToast("Failed to resolve stream from Piped API. Pro Mode required.");
                         return;
                     }

@@ -1037,6 +1037,9 @@
     <!-- Hidden standard Audio Tag -->
     <audio id="audio-element" preload="auto" crossorigin="anonymous"></audio>
 
+    <!-- Hidden container for last-resort YouTube iframe player -->
+    <div id="yt-iframe-container" style="position: absolute; width: 1px; height: 1px; left: -9999px; top: -9999px; overflow: hidden; pointer-events: none;"></div>
+
     <!-- Modal dialogs (Playlists, custom options, sleep timer) -->
     <div id="modal-container" class="hide">
         <div class="modal-card glass-panel" id="playlist-modal">
@@ -1289,6 +1292,7 @@
     <script src="js/equalizer.js"></script>
     <script src="js/visualizer.js"></script>
     <script src="js/jam.js"></script>
+    <script src="js/playback-provider.js"></script>
     <script src="js/app.js"></script>
     <script src="js/tools/backend.js"></script>
     <script src="js/tools/universal-link.js"></script>
