@@ -2,17 +2,18 @@ import json
 import os
 import urllib.request
 import urllib.error
+import re
 from datetime import datetime
-from telegram import Update, BotCommand
+from telegram import Update, BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, CopyTextButton
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
 from config import BOT_TOKEN, ADMIN_ID
 
 USERS_FILE = "users.json"
 LINK_FILE = "current_link.json"
-LOCAL_SERVER = "http://127.0.0.1:8000"
+LOG_FILE = "cloudflared.log"
+LOCAL_SERVER = "http://127.0.0.1:7860"
 
-# Admin ki current state yaad rakhne ke liye dictionary
 admin_states = {}
 
 def load_users():
@@ -26,6 +27,18 @@ def save_users(users):
         json.dump(users, f, indent=2)
 
 def load_link():
+    if os.path.exists(LOG_FILE):
+        try:
+            with open(LOG_FILE, "r", encoding="utf-8") as f:
+                content = f.read()
+                matches = re.findall(r"https://[a-zA-Z0-9-]+\.trycloudflare\.com", content)
+                if matches:
+                    latest_url = matches[-1] 
+                    save_link(latest_url) 
+                    return latest_url
+        except Exception:
+            pass
+
     if not os.path.exists(LINK_FILE):
         return None
     with open(LINK_FILE, "r") as f:
@@ -61,7 +74,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         save_users(users)
 
     await update.message.reply_text(
-        "Welcome to AURA Music Bot!\n\nUse /help to see available commands."
+        "🎵 *Welcome to AURA Music Bot!*\n\n"
+        "Main aapko Aura Music App ki latest URL provide karunga.\n\n"
+        "👉 URL lene ke liye /latest dabayein.",
+        parse_mode="Markdown"
     )
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -76,45 +92,49 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def latest(update: Update, context: ContextTypes.DEFAULT_TYPE):
     url = load_link()
     if url:
-        await update.message.reply_text(f"Latest link:\n{url}")
+        # Yahan specifically Telegram ka naya CopyTextButton use kiya hai
+        keyboard = [[InlineKeyboardButton("📋 Copy Link", copy_text=CopyTextButton(text=url))]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text(
+            f"🔗 *Aura Music App Latest Link:*\n\n`{url}`", 
+            parse_mode="Markdown",
+            reply_markup=reply_markup
+        )
     else:
-        await update.message.reply_text("No link set yet. Please check back later.")
+        await update.message.reply_text("Server abhi update ho raha hai. Please thodi der me try karein.")
 
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if is_server_online():
-        await update.message.reply_text("Server: Online ✅")
+        await update.message.reply_text("📊 *Server Status:*\nApp is Online ✅", parse_mode="Markdown")
     else:
-        await update.message.reply_text("Server: Offline ❌")
+        await update.message.reply_text("📊 *Server Status:*\nApp is Offline ❌", parse_mode="Markdown")
 
 async def setlink(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     if user.id != ADMIN_ID:
-        await update.message.reply_text("You are not authorized to use this command.")
+        await update.message.reply_text("You are not authorized.")
         return
 
-    # Agar ek line me command aayi hai (Purana tarika)
     if context.args:
         url = context.args[0]
         save_link(url)
         await update.message.reply_text(f"Link updated:\n{url}")
-    # Agar menu se sirf /setlink tap kiya hai (Naya tarika)
     else:
         admin_states[user.id] = "WAITING_LINK"
-        await update.message.reply_text("🔗 Kripya naya Cloudflare URL bhejiye:\n\n(Cancel karne ke liye /cancel dabayein)")
+        await update.message.reply_text("🔗 Kripya naya URL bhejiye:\n\n(Cancel karne ke liye /cancel dabayein)")
 
 async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     if user.id != ADMIN_ID:
-        await update.message.reply_text("You are not authorized to use this command.")
+        await update.message.reply_text("You are not authorized.")
         return
 
-    # Agar ek line me command aayi hai (Purana tarika)
     if context.args:
         message = " ".join(context.args)
         users = load_users()
-        await update.message.reply_text(f"Broadcasting message to {len(users)} users...")
-        success = 0
-        failed = 0
+        await update.message.reply_text(f"Broadcasting to {len(users)} users...")
+        success, failed = 0, 0
         for user_id in users:
             try:
                 await context.bot.send_message(chat_id=user_id, text=message)
@@ -122,12 +142,10 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception:
                 failed += 1
         await update.message.reply_text(f"Broadcast complete!\n✅ Success: {success}\n❌ Failed: {failed}")
-    # Agar menu se sirf /broadcast tap kiya hai (Naya tarika)
     else:
         admin_states[user.id] = "WAITING_BROADCAST"
-        await update.message.reply_text("📢 Kripya apna message likhein jise aap sabhi users ko bhejna chahte hain:\n\n(Cancel karne ke liye /cancel dabayein)")
+        await update.message.reply_text("📢 Kripya apna message likhein:\n\n(Cancel karne ke liye /cancel dabayein)")
 
-# Galti se tap hone par cancel karne ke liye
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     if user.id in admin_states:
@@ -136,12 +154,10 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("Koi action pending nahi tha.")
 
-# Ye function ab automatically user ka next message pakad lega
 async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    
     if user.id != ADMIN_ID:
-        return # Normal users ki bina command wali chat ko ignore karega
+        return 
         
     state = admin_states.get(user.id)
     text = update.message.text
@@ -153,18 +169,15 @@ async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     elif state == "WAITING_BROADCAST":
         users = load_users()
-        await update.message.reply_text(f"Broadcasting message to {len(users)} users...")
-        
-        success = 0
-        failed = 0
+        await update.message.reply_text(f"Broadcasting to {len(users)} users...")
+        success, failed = 0, 0
         for user_id in users:
             try:
                 await context.bot.send_message(chat_id=user_id, text=text)
                 success += 1
             except Exception:
                 failed += 1
-                
-        admin_states.pop(user.id, None) # State clear kar do
+        admin_states.pop(user.id, None)
         await update.message.reply_text(f"✅ Broadcast complete!\nSuccess: {success}\nFailed: {failed}")
     else:
         await update.message.reply_text("Kripya menu se koi command chunein.")
@@ -189,11 +202,9 @@ def main():
     app.add_handler(CommandHandler("setlink", setlink))
     app.add_handler(CommandHandler("broadcast", broadcast))
     app.add_handler(CommandHandler("cancel", cancel))
-    
-    # Ye handler normal text pakdega jiske aage '/' nahi hai
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_admin_text))
     
-    print("Bot started...")
+    print("Bot started with Copy Button...")
     app.run_polling()
 
 if __name__ == "__main__":
