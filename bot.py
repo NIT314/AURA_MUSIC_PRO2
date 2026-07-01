@@ -14,17 +14,16 @@ LINK_FILE = "current_link.json"
 LOG_FILE = "cloudflared.log"
 LOCAL_SERVER = "http://127.0.0.1:7860"
 
+# States: admin_states for commands, user_states for support chat
 admin_states = {}
+user_states = {}
 
 def load_users():
-    if not os.path.exists(USERS_FILE):
-        return {}
-    with open(USERS_FILE, "r") as f:
-        return json.load(f)
+    if not os.path.exists(USERS_FILE): return {}
+    with open(USERS_FILE, "r") as f: return json.load(f)
 
 def save_users(users):
-    with open(USERS_FILE, "w") as f:
-        json.dump(users, f, indent=2)
+    with open(USERS_FILE, "w") as f: json.dump(users, f, indent=2)
 
 def load_link():
     if os.path.exists(LOG_FILE):
@@ -33,178 +32,136 @@ def load_link():
                 content = f.read()
                 matches = re.findall(r"https://[a-zA-Z0-9-]+\.trycloudflare\.com", content)
                 if matches:
-                    latest_url = matches[-1] 
-                    save_link(latest_url) 
+                    latest_url = matches[-1]
+                    save_link(latest_url)
                     return latest_url
-        except Exception:
-            pass
-
-    if not os.path.exists(LINK_FILE):
-        return None
-    with open(LINK_FILE, "r") as f:
-        return json.load(f).get("url")
+        except Exception: pass
+    if os.path.exists(LINK_FILE):
+        with open(LINK_FILE, "r") as f: return json.load(f).get("url")
+    return None
 
 def save_link(url):
     with open(LINK_FILE, "w") as f:
-        json.dump(
-            {"url": url, "updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S")},
-            f,
-            indent=2,
-        )
+        json.dump({"url": url, "updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}, f, indent=2)
 
 def is_server_online():
-    try:
-        urllib.request.urlopen(LOCAL_SERVER, timeout=3)
-        return True
-    except urllib.error.HTTPError:
-        return True
-    except Exception:
-        return False
+    try: urllib.request.urlopen(LOCAL_SERVER, timeout=3); return True
+    except: return False
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     users = load_users()
-
     if str(user.id) not in users:
-        users[str(user.id)] = {
-            "username": user.username,
-            "first_name": user.first_name,
-            "joined": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        }
+        users[str(user.id)] = {"username": user.username, "first_name": user.first_name, "joined": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
         save_users(users)
-
-    await update.message.reply_text(
-        "🎵 *Welcome to AURA Music Bot!*\n\n"
-        "Main aapko Aura Music App ki latest URL provide karunga.\n\n"
-        "👉 URL lene ke liye /latest dabayein.",
-        parse_mode="Markdown"
-    )
-
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "Available commands:\n"
-        "/start - Register with the bot\n"
-        "/help - Show this message\n"
-        "/latest - Get latest server link\n"
-        "/status - Check server status"
-    )
+    await update.message.reply_text("🎵 *Welcome to AURA Music Bot!*", parse_mode="Markdown")
 
 async def latest(update: Update, context: ContextTypes.DEFAULT_TYPE):
     url = load_link()
     if url:
-        # Yahan specifically Telegram ka naya CopyTextButton use kiya hai
         keyboard = [[InlineKeyboardButton("📋 Copy Link", copy_text=CopyTextButton(text=url))]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        await update.message.reply_text(
-            f"🔗 *Aura Music App Latest Link:*\n\n`{url}`", 
-            parse_mode="Markdown",
-            reply_markup=reply_markup
-        )
+        await update.message.reply_text(f"🔗 *Aura Music App Latest Link:*\n\n`{url}`", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
     else:
-        await update.message.reply_text("Server abhi update ho raha hai. Please thodi der me try karein.")
+        await update.message.reply_text("Server abhi update ho raha hai.")
 
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if is_server_online():
-        await update.message.reply_text("📊 *Server Status:*\nApp is Online ✅", parse_mode="Markdown")
-    else:
-        await update.message.reply_text("📊 *Server Status:*\nApp is Offline ❌", parse_mode="Markdown")
+    s = "Online ✅" if is_server_online() else "Offline ❌"
+    await update.message.reply_text(f"📊 *Server Status:*\nApp is {s}", parse_mode="Markdown")
 
-async def setlink(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    if user.id != ADMIN_ID:
-        await update.message.reply_text("You are not authorized.")
-        return
-
-    if context.args:
-        url = context.args[0]
-        save_link(url)
-        await update.message.reply_text(f"Link updated:\n{url}")
-    else:
-        admin_states[user.id] = "WAITING_LINK"
-        await update.message.reply_text("🔗 Kripya naya URL bhejiye:\n\n(Cancel karne ke liye /cancel dabayein)")
-
-async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    if user.id != ADMIN_ID:
-        await update.message.reply_text("You are not authorized.")
-        return
-
-    if context.args:
-        message = " ".join(context.args)
-        users = load_users()
-        await update.message.reply_text(f"Broadcasting to {len(users)} users...")
-        success, failed = 0, 0
-        for user_id in users:
-            try:
-                await context.bot.send_message(chat_id=user_id, text=message)
-                success += 1
-            except Exception:
-                failed += 1
-        await update.message.reply_text(f"Broadcast complete!\n✅ Success: {success}\n❌ Failed: {failed}")
-    else:
-        admin_states[user.id] = "WAITING_BROADCAST"
-        await update.message.reply_text("📢 Kripya apna message likhein:\n\n(Cancel karne ke liye /cancel dabayein)")
+# SUPPORT SYSTEM
+async def message_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_states[update.effective_user.id] = "SENDING_SUPPORT"
+    await update.message.reply_text("Apna message bhejiye:")
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    if user.id in admin_states:
-        admin_states.pop(user.id)
-        await update.message.reply_text("❌ Action cancel kar diya gaya hai.")
-    else:
-        await update.message.reply_text("Koi action pending nahi tha.")
+    uid = update.effective_user.id
+    if uid in admin_states: admin_states.pop(uid)
+    if uid in user_states: user_states.pop(uid)
+    await update.message.reply_text("❌ Action cancelled.")
 
-async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    if user.id != ADMIN_ID:
-        return 
-        
-    state = admin_states.get(user.id)
-    text = update.message.text
+async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    uid = update.effective_user.id
     
+    # 1. Admin Reply Logic (Reply to message)
+    if uid == ADMIN_ID and update.message.reply_to_message:
+        quoted = update.message.reply_to_message.text
+        match = re.search(r"🆔 ID: (\d+)", quoted)
+        if match:
+            target_id = match.group(1)
+            try:
+                await context.bot.send_message(target_id, update.message.text, parse_mode="Markdown")
+                await update.message.reply_text("✅ Reply sent.")
+                return
+            except Exception as e: await update.message.reply_text(f"❌ Error: {e}")
+
+    # 2. User Support Message Logic
+    if user_states.get(uid) == "SENDING_SUPPORT":
+        user = update.effective_user
+        # Format as requested
+        msg = f"📩 *New Message*\n\n👤 Name: {user.first_name}\n🆔 ID: `{user.id}`\n🌐 Username: @{user.username}\n\n{update.message.text}"
+        await context.bot.send_message(ADMIN_ID, msg, parse_mode="Markdown")
+        user_states.pop(uid)
+        await update.message.reply_text("✅ Message sent to Admin.")
+        return
+
+    # 3. Existing Admin State Logic (setlink/broadcast)
+    state = admin_states.get(uid)
     if state == "WAITING_LINK":
-        save_link(text.strip())
-        admin_states.pop(user.id, None)
-        await update.message.reply_text(f"✅ Naya Link Save Ho Gaya:\n{text}")
-        
+        save_link(update.message.text.strip())
+        admin_states.pop(uid)
+        await update.message.reply_text("✅ Link saved.")
     elif state == "WAITING_BROADCAST":
         users = load_users()
-        await update.message.reply_text(f"Broadcasting to {len(users)} users...")
-        success, failed = 0, 0
+        for u in users:
+            try: await context.bot.send_message(chat_id=u, text=update.message.text)
+            except: pass
+        admin_states.pop(uid)
+        await update.message.reply_text("✅ Broadcast complete.")
+
+# ADMIN COMMANDS
+async def setlink(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID: return
+    admin_states[update.effective_user.id] = "WAITING_LINK"
+    await update.message.reply_text("🔗 Send the new URL:")
+
+async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID: return
+    admin_states[update.effective_user.id] = "WAITING_BROADCAST"
+    await update.message.reply_text("📢 Send the broadcast message:")
+
+async def auto_broadcast(application):
+    users = load_users()
+    url = load_link()
+    if url:
+        msg = f"📢 *Bot Online!*\n🔗 *Latest Link:*\n`{url}`"
+        keyboard = [[InlineKeyboardButton("📋 Copy Link", copy_text=CopyTextButton(text=url))]]
         for user_id in users:
-            try:
-                await context.bot.send_message(chat_id=user_id, text=text)
-                success += 1
-            except Exception:
-                failed += 1
-        admin_states.pop(user.id, None)
-        await update.message.reply_text(f"✅ Broadcast complete!\nSuccess: {success}\nFailed: {failed}")
-    else:
-        await update.message.reply_text("Kripya menu se koi command chunein.")
+            try: await application.bot.send_message(chat_id=user_id, text=msg, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+            except: pass
 
 async def post_init(application):
     await application.bot.set_my_commands([
-        BotCommand("start", "Register with the bot"),
-        BotCommand("help", "Show available commands"),
-        BotCommand("latest", "Get latest server link"),
-        BotCommand("status", "Check server status"),
-        BotCommand("setlink", "Set new link (Admin only)"),
-        BotCommand("broadcast", "Broadcast message (Admin only)"),
+        BotCommand("start", "Start"),
+        BotCommand("latest", "Get Link"),
+        BotCommand("status", "Server Status"),
+        BotCommand("message", "Message Admin"),
+        BotCommand("setlink", "Set Link (Admin)"),
+        BotCommand("broadcast", "Broadcast (Admin)"),
+        BotCommand("cancel", "Cancel Action")
     ])
+    await auto_broadcast(application)
 
 def main():
     app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
-    
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("latest", latest))
     app.add_handler(CommandHandler("status", status))
+    app.add_handler(CommandHandler("message", message_start))
     app.add_handler(CommandHandler("setlink", setlink))
     app.add_handler(CommandHandler("broadcast", broadcast))
     app.add_handler(CommandHandler("cancel", cancel))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_admin_text))
-    
-    print("Bot started with Copy Button...")
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+    print("Bot started...")
     app.run_polling()
 
 if __name__ == "__main__":
