@@ -62,3 +62,7 @@ node_modules/
 # Local database exclusions
 /backend_db/*
 !/backend_db/broadcasts.json.example
+users.json
+config.py
+users.json
+current_link.json
